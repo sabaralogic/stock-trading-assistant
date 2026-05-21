@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import argparse
 from pathlib import Path
 
@@ -11,6 +12,8 @@ from src.data_fetcher import fetch_batch_stock_data, normalize_symbols
 from src.evaluator import evaluate_predictions, load_previous_predictions, save_predictions
 from src.indicators import add_rsi, add_moving_averages
 from src.strategy import evaluate_stock, rank_stocks
+
+from src.telegram_alert import send_telegram_message
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fetch historical stock data in batches.")
@@ -217,6 +220,18 @@ def main() -> None:
         print(f"   Reasons: {', '.join(r['reasons']) if r['reasons'] else 'None'}")
 
     save_predictions(results)
+    
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+
+    if token and chat_id:
+        send_telegram_message(
+            token,
+            chat_id,
+            "✅ GitHub Actions Telegram integration works!"
+        )
+    
+
 
 if __name__ == "__main__":
     main()
