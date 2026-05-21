@@ -41,16 +41,23 @@ def parse_args() -> argparse.Namespace:
     )
     return parser.parse_args()
 
+def load_stocks_from_file(path: str) -> list[str]:
+    with open(path, "r") as file:
+        return [
+            line.strip()
+            for line in file
+            if line.strip()
+        ]
 
 def read_symbols(args: argparse.Namespace) -> list[str]:
     symbols = list(args.symbols)
 
     if args.symbols_file:
-        symbols.append(args.symbols_file.read_text())
+        file_symbols = load_stocks_from_file(args.symbols_file)
+        symbols.extend(file_symbols)
 
     return normalize_symbols(symbols)
-
-
+    
 def print_debug_data(data) -> None:
     row_count, column_count = data.shape
 
