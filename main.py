@@ -156,6 +156,26 @@ def _format_pct(value: float) -> str:
         return "N/A"
     return f"{value:+.1f}%"
 
+def build_telegram_message(top_stocks: list[dict]) -> str:
+    if not top_stocks:
+        return "No trading opportunities today."
+
+    lines = ["🔥 Top Opportunities", ""]
+
+    for r in top_stocks:
+        rsi = round(r["rsi"], 2) if pd.notna(r["rsi"]) else "N/A"
+
+        lines.append(
+            f"{r['stock']} → {r['signal']} "
+            f"(Score: {r['score']}, RSI: {rsi})"
+        )
+
+        reasons = ", ".join(r["reasons"]) if r["reasons"] else "None"
+
+        lines.append(f"Reasons: {reasons}")
+        lines.append("")
+
+    return "\n".join(lines)
 
 def main() -> None:
     args = parse_args()
@@ -219,8 +239,9 @@ def main() -> None:
         print(f"{r['stock']} → {r['signal']} (Score: {r['score']}, RSI: {round(r['rsi'], 2)})")
         print(f"   Reasons: {', '.join(r['reasons']) if r['reasons'] else 'None'}")
 
+    message = build_telegram_message(top_stocks)
     save_predictions(results)
-    
+
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
 
@@ -228,7 +249,7 @@ def main() -> None:
         send_telegram_message(
             token,
             chat_id,
-            "✅ GitHub Actions Telegram integration works!"
+            message
         )
     
 
