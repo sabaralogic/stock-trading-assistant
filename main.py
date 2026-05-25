@@ -311,7 +311,7 @@ def main() -> None:
     print_yesterday_performance(previous_predictions, result)
 
     # Rank top stocks
-    top_stocks = rank_stocks(results, top_n=25)
+    top_stocks = rank_stocks(results, top_n=10)
 
     if not top_stocks:
         print("\nNo stock opportunities to rank.")
