@@ -325,34 +325,38 @@ def main() -> None:
         return
 
     save_predictions(results)
-    # print("\n🔥 Top Opportunities:\n")
-    # for r in top_stocks:
-    #     print(f"{r['stock']} → {r['signal']} (Score: {r['score']}, RSI: {round(r['rsi'], 2)})")
-    #     print(f"   Reasons: {', '.join(r['reasons']) if r['reasons'] else 'None'}")
+    print("\n🔥 Top Opportunities:\n")
+    for r in top_stocks:
+        print(f"{r['stock']} → {r['signal']} (Score: {r['score']}, RSI: {round(r['rsi'], 2)})")
+        print(f"   Reasons: {', '.join(r['reasons']) if r['reasons'] else 'None'}")
 
-    table = build_opportunities_table(top_stocks)
-    print(table)
+    # table = build_opportunities_table(top_stocks)
+    # print(table)
 
-    html_report = save_html_report(top_stocks)
-    print(f"HTML report generated: {html_report}")
+    # html_report = save_html_report(top_stocks)
+    # print(f"HTML report generated: {html_report}")
 
-    html_report = save_html_report(top_stocks)
-    image_path = html_to_png(str(html_report))
-    print(f"Generated image: {image_path}")
+    # html_report = save_html_report(top_stocks)
+    # image_path = html_to_png(str(html_report))
+    # print(f"Generated image: {image_path}")
 
     # telegram_message = f"<pre>{table}</pre>"
-    # message = build_telegram_message(top_stocks)
+    message = build_telegram_message(top_stocks)
+    print("\nTelegram Message:\n")
+    print(message)
 
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
 
     if token and chat_id:
-        send_telegram_photo(
+        send_telegram_message(
             token=token,
             chat_id=chat_id,
-            photo_path=image_path,
-            caption="🔥 Top Opportunities",
+            message=message
         )
+    else:
+        print("\nTelegram credentials not found in environment variables.")
+        print("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID to enable Telegram alerts.")
 
 
 if __name__ == "__main__":
