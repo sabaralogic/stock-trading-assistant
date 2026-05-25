@@ -241,23 +241,25 @@ def _format_pct(value: float) -> str:
     return f"{value:+.1f}%"
 
 def build_telegram_message(top_stocks: list[dict]) -> str:
-    if not top_stocks:
-        return "No trading opportunities today."
 
-    lines = ["🔥 Top Opportunities", ""]
+    lines = []
 
-    for r in top_stocks:
+    lines.append("🔥 <b>Top Opportunities</b>\n")
+
+    for i, r in enumerate(top_stocks, start=1):
         rsi = round(r["rsi"], 2) if pd.notna(r["rsi"]) else "N/A"
 
-        lines.append(
-            f"{r['stock']} → {r['signal']} "
-            f"(Score: {r['score']}, RSI: {rsi})"
-        )
+        lines.append(f"<b>{i}. {r['stock']}</b>")
+        lines.append(f"Signal : {r['signal']}")
+        lines.append(f"Score  : {r['score']}")
+        lines.append(f"RSI    : {rsi}\n")
 
-        reasons = ", ".join(r["reasons"]) if r["reasons"] else "None"
+        lines.append("<b>Reasons</b>")
 
-        lines.append(f"Reasons: {reasons}")
-        lines.append("")
+        for reason in r["reasons"]:
+            lines.append(f"• {reason}")
+
+        lines.append("\n━━━━━━━━━━━━━━\n")
 
     return "\n".join(lines)
 
@@ -326,8 +328,8 @@ def main() -> None:
     table = build_opportunities_table(top_stocks)
     print(table)
 
-    telegram_message = f"<pre>{table}</pre>"
-    # message = build_telegram_message(top_stocks)
+    # telegram_message = f"<pre>{table}</pre>"
+    message = build_telegram_message(top_stocks)
     save_predictions(results)
 
     token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -337,7 +339,7 @@ def main() -> None:
         send_telegram_message(
             token,
             chat_id,
-            telegram_message
+            message
         )
 
 if __name__ == "__main__":
