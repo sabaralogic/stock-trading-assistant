@@ -15,6 +15,10 @@ from src.indicators import add_rsi, add_moving_averages
 from src.strategy import evaluate_stock, rank_stocks
 
 from src.telegram_alert import send_telegram_message
+from src.telegram_alert import send_telegram_photo
+from src.report_image import save_html_report
+
+from src.html_to_image import html_to_png
 
 NIFTY500_URL = (
     "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
@@ -311,7 +315,7 @@ def main() -> None:
     print_yesterday_performance(previous_predictions, result)
 
     # Rank top stocks
-    top_stocks = rank_stocks(results, top_n=10)
+    top_stocks = rank_stocks(results, top_n=25)
 
     if not top_stocks:
         print("\nNo stock opportunities to rank.")
@@ -320,6 +324,7 @@ def main() -> None:
         save_predictions(results)
         return
 
+    save_predictions(results)
     # print("\n🔥 Top Opportunities:\n")
     # for r in top_stocks:
     #     print(f"{r['stock']} → {r['signal']} (Score: {r['score']}, RSI: {round(r['rsi'], 2)})")
@@ -328,19 +333,27 @@ def main() -> None:
     table = build_opportunities_table(top_stocks)
     print(table)
 
+    html_report = save_html_report(top_stocks)
+    print(f"HTML report generated: {html_report}")
+
+    html_report = save_html_report(top_stocks)
+    image_path = html_to_png(str(html_report))
+    print(f"Generated image: {image_path}")
+
     # telegram_message = f"<pre>{table}</pre>"
-    message = build_telegram_message(top_stocks)
-    save_predictions(results)
+    # message = build_telegram_message(top_stocks)
 
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
 
     if token and chat_id:
-        send_telegram_message(
-            token,
-            chat_id,
-            message
+        send_telegram_photo(
+            token=token,
+            chat_id=chat_id,
+            photo_path=image_path,
+            caption="🔥 Top Opportunities",
         )
+
 
 if __name__ == "__main__":
     main()
