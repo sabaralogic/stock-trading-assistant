@@ -122,6 +122,16 @@ def backtest_stock(data: pd.DataFrame, stock: str) -> tuple[list[dict], float]:
         else:
             change_pct = ((entry_price - exit_price) / entry_price) * 100
 
+        if change_pct > 0:
+            correct = True
+            status = "CORRECT"
+        elif change_pct < 0:
+            correct = False
+            status = "WRONG"
+        else:
+            correct = None
+            status = "NEUTRAL"
+        
         result = {
             "date": _format_date(entry_row.name),
             "stock": stock,
@@ -134,8 +144,8 @@ def backtest_stock(data: pd.DataFrame, stock: str) -> tuple[list[dict], float]:
             "reasons": prediction.get("reasons", []),
             "change_pct": change_pct,
             "stop_loss_triggered": stop_loss_triggered,
-            "correct": change_pct > 0,
-            "status": "CORRECT" if change_pct > 0 else "WRONG",
+            "correct": correct,
+            "status": status,
         }
 
         graded_predictions += 1

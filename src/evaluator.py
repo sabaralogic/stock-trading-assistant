@@ -65,9 +65,16 @@ def load_previous_predictions() -> pd.DataFrame:
     if predictions.empty:
         return pd.DataFrame(columns=PREDICTION_COLUMNS)
 
-    latest_date = predictions["date"].max()
-    latest_predictions = predictions.loc[predictions["date"] == latest_date].copy()
+    unique_dates = sorted(predictions["date"].unique())
+    if len(unique_dates) < 2:
+        return pd.DataFrame(columns=PREDICTION_COLUMNS)
+    previous_date = unique_dates[-2]
+
+    latest_predictions = predictions.loc[
+        predictions["date"] == previous_date
+    ].copy()
     latest_predictions["date"] = latest_predictions["date"].dt.date.astype(str)
+    
     return latest_predictions.reset_index(drop=True)
 
 

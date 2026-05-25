@@ -9,6 +9,7 @@ def send_telegram_message(token: str, chat_id: str, message: str) -> None:
         json={
             "chat_id": chat_id,
             "text": message,
+            "parse_mode": "HTML",
         },
         timeout=10,
     )

@@ -5,6 +5,7 @@ import argparse
 from pathlib import Path
 
 import pandas as pd
+import textwrap
 
 from config import DEBUG_DATA_MODE, DEBUG_ENABLED, DEBUG_PREVIEW_ROWS
 from src.backtester import backtest_portfolio
@@ -14,6 +15,74 @@ from src.indicators import add_rsi, add_moving_averages
 from src.strategy import evaluate_stock, rank_stocks
 
 from src.telegram_alert import send_telegram_message
+
+NIFTY500_URL = (
+    "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
+)
+
+def build_opportunities_table(top_stocks: list[dict]) -> str:
+
+    separator = (
+        "+------+---------------+--------+-------+--------+----------------------------------+"
+    )
+
+    lines = []
+
+    lines.append("🔥 Top Opportunities\n")
+
+    lines.append(separator)
+    lines.append(
+        "| Rank | Stock         | Signal | Score | RSI    | Comments                         |"
+    )
+    lines.append(separator)
+
+    for i, r in enumerate(top_stocks, start=1):
+
+        rsi = round(r["rsi"], 2) if pd.notna(r["rsi"]) else "N/A"
+
+        comments = ", ".join(r["reasons"])
+
+        wrapped_comments = textwrap.wrap(comments, width=32)
+
+        first_line = True
+
+        for line in wrapped_comments:
+
+            if first_line:
+                lines.append(
+                    f"| {i:<4} "
+                    f"| {r['stock']:<13} "
+                    f"| {r['signal']:<6} "
+                    f"| {r['score']:<5} "
+                    f"| {str(rsi):<6} "
+                    f"| {line:<32} |"
+                )
+
+                first_line = False
+
+            else:
+                lines.append(
+                    f"| {'':<4} "
+                    f"| {'':<13} "
+                    f"| {'':<6} "
+                    f"| {'':<5} "
+                    f"| {'':<6} "
+                    f"| {line:<32} |"
+                )
+
+        lines.append(separator)
+
+    return "\n".join(lines)
+
+def get_default_symbols() -> list[str]:
+
+    df = pd.read_csv(NIFTY500_URL)
+
+    return [
+        f"{symbol}.NS"
+        for symbol in df["Symbol"].dropna()
+        if not symbol.startswith("DUMMY")
+    ]
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fetch historical stock data in batches.")
@@ -55,12 +124,27 @@ def load_stocks_from_file(path: str) -> list[str]:
 def read_symbols(args: argparse.Namespace) -> list[str]:
     symbols = list(args.symbols)
 
+    if symbols:
+        print(f"Loaded {len(symbols)} symbols from command line arguments.")
+    
     if args.symbols_file:
         file_symbols = load_stocks_from_file(args.symbols_file)
         symbols.extend(file_symbols)
+        if file_symbols:
+            print(f"Loaded {len(file_symbols)} symbols from file: {args.symbols_file}")
+
+    if not symbols:
+        try:
+            print("Loading default NIFTY500 symbols...")
+            symbols.extend(get_default_symbols())
+        except Exception as e:
+            print(f"Failed to load default symbols: {e}")
+            return []
+
+    print(f"Loaded {len(symbols)} normalized symbols.")
 
     return normalize_symbols(symbols)
-    
+
 def print_debug_data(data) -> None:
     row_count, column_count = data.shape
 
@@ -128,13 +212,13 @@ def print_backtest_summary(historical_data) -> None:
         key=lambda result: result["change_pct"],
         reverse=True,
     )
-    best_trades = sorted_trades[:5]
+    best_trades = sorted_trades[:25]
     worst_trades = list(reversed(sorted_trades[-5:]))
 
     if not best_trades:
         return
 
-    print("\nTop 5 Best Trades:\n")
+    print(f"\nTop {len(best_trades)} Best Trades:\n")
     for trade in best_trades:
         print(
             f"{trade['stock']} → {trade['signal']} → {trade['status']} "
@@ -142,7 +226,7 @@ def print_backtest_summary(historical_data) -> None:
         )
         print(f"   {trade['date']} → {trade['exit_date']}")
 
-    print("\nTop 5 Worst Trades:\n")
+    print(f"\nTop {len(worst_trades)} Worst Trades:\n")
     for trade in worst_trades:
         print(
             f"{trade['stock']} → {trade['signal']} → {trade['status']} "
@@ -198,9 +282,9 @@ def main() -> None:
 
     results = []
 
-    for symbol, data in sorted(result.items()):
-        print(f"  {symbol}: {len(data)} rows")
-
+    # for symbol, data in sorted(result.items()):
+    #     print(f"  {symbol}: {len(data)} rows")
+    
     if args.backtest:
         print_backtest_summary(result)
         return
@@ -225,7 +309,7 @@ def main() -> None:
     print_yesterday_performance(previous_predictions, result)
 
     # Rank top stocks
-    top_stocks = rank_stocks(results, top_n=5)
+    top_stocks = rank_stocks(results, top_n=25)
 
     if not top_stocks:
         print("\nNo stock opportunities to rank.")
@@ -234,12 +318,16 @@ def main() -> None:
         save_predictions(results)
         return
 
-    print("\n🔥 Top Opportunities:\n")
-    for r in top_stocks:
-        print(f"{r['stock']} → {r['signal']} (Score: {r['score']}, RSI: {round(r['rsi'], 2)})")
-        print(f"   Reasons: {', '.join(r['reasons']) if r['reasons'] else 'None'}")
+    # print("\n🔥 Top Opportunities:\n")
+    # for r in top_stocks:
+    #     print(f"{r['stock']} → {r['signal']} (Score: {r['score']}, RSI: {round(r['rsi'], 2)})")
+    #     print(f"   Reasons: {', '.join(r['reasons']) if r['reasons'] else 'None'}")
 
-    message = build_telegram_message(top_stocks)
+    table = build_opportunities_table(top_stocks)
+    print(table)
+
+    telegram_message = f"<pre>{table}</pre>"
+    # message = build_telegram_message(top_stocks)
     save_predictions(results)
 
     token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -249,10 +337,8 @@ def main() -> None:
         send_telegram_message(
             token,
             chat_id,
-            message
+            telegram_message
         )
-    
-
 
 if __name__ == "__main__":
     main()
