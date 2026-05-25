@@ -28,9 +28,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run stock scanner
+      - name: Run stock scanner custom
         run: |
           python main.py --symbols-file data/stocks.txt
+
+      - name: Run stock scanner NIFTY500
+        run: |
+          python main.py
 
       - name: Run backtest
         run: |
