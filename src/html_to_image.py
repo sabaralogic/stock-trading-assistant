@@ -15,8 +15,8 @@ def html_to_png(
 
         page = browser.new_page(
             viewport={
-                "width": 1200,
-                "height": 2000
+                "width": 2200,
+                "height": 1600
             }
         )
 

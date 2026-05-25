@@ -84,15 +84,16 @@ def generate_html_report(top_stocks: list[dict]) -> str:
             }}
 
             .container {{
-                display: flex;
-                flex-direction: column;
-                gap: 20px;
+                display: grid;
+                grid-template-columns: repeat(5, 1fr);
+                gap: 16px;
             }}
 
             .card {{
+                min-height: 320px;
                 background: #1e293b;
-                border-radius: 16px;
-                padding: 20px;
+                border-radius: 12px;
+                padding: 14px;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             }}
 
@@ -119,7 +120,7 @@ def generate_html_report(top_stocks: list[dict]) -> str:
             }}
 
             .stock {{
-                font-size: 24px;
+                font-size: 18px;
                 font-weight: bold;
                 margin-bottom: 10px;
             }}
@@ -159,6 +160,7 @@ def generate_html_report(top_stocks: list[dict]) -> str:
             .reasons li {{
                 margin-bottom: 6px;
                 line-height: 1.5;
+                font-size: 12px;
             }}
 
         </style>
