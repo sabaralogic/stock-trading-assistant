@@ -12,6 +12,7 @@ from src.backtester import backtest_portfolio
 from src.data_fetcher import fetch_batch_stock_data, normalize_symbols
 from src.evaluator import evaluate_predictions, load_previous_predictions, save_predictions
 from src.indicators import add_rsi, add_moving_averages
+from src.stock_analysis import analyze_stock, format_stock_analysis, save_stock_analysis_report
 from src.strategy import evaluate_stock, rank_stocks
 
 from src.telegram_alert import send_telegram_message
@@ -114,6 +115,16 @@ def parse_args() -> argparse.Namespace:
         "--backtest",
         action="store_true",
         help="Run portfolio backtesting instead of normal daily evaluation.",
+    )
+    parser.add_argument(
+        "--analyze",
+        help="Analyze one particular stock in detail, for example: --analyze AAPL or --analyze RELIANCE.NS",
+    )
+    parser.add_argument(
+        "--turning-point-threshold",
+        type=float,
+        default=10.0,
+        help="Minimum swing percentage required to show peaks and lows in analyze mode. Default: 10.0",
     )
     return parser.parse_args()
 
@@ -269,6 +280,37 @@ def build_telegram_message(top_stocks: list[dict]) -> str:
 
 def main() -> None:
     args = parse_args()
+
+    if args.analyze:
+        analysis_symbols = normalize_symbols([args.analyze])
+        if not analysis_symbols:
+            raise SystemExit("Please provide a valid stock symbol for analysis.")
+
+        symbol = analysis_symbols[0]
+        result = fetch_batch_stock_data(
+            [symbol],
+            max_workers=1,
+            period=args.period,
+            interval=args.interval,
+            start=args.start,
+            end=args.end,
+            auto_adjust=not args.no_auto_adjust,
+        )
+
+        data = result.get(symbol)
+        if data is None or data.empty:
+            raise SystemExit(f"No data available for {symbol}.")
+
+        analysis = analyze_stock(
+            data,
+            symbol,
+            turning_point_threshold_pct=args.turning_point_threshold,
+        )
+        print(format_stock_analysis(analysis))
+        report_path = save_stock_analysis_report(analysis)
+        print(f"\nAnalysis chart saved to: {report_path}")
+        return
+
     symbols = read_symbols(args)
 
     if not symbols:
