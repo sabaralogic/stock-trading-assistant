@@ -6,8 +6,17 @@ on:
   schedule:
     - cron: "0 0 * * 1-5"
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
 jobs:
-  run-stock-scanner:
+  build-site:
     runs-on: ubuntu-latest
 
     env:
@@ -43,3 +52,32 @@ jobs:
       - name: Run backtest
         run: |
           python main.py --symbols-file data/stocks.txt --period 1y --backtest
+
+      - name: Build GitHub Pages site
+        run: |
+          rm -rf site
+          mkdir -p site
+          cp webapp/templates/index.html site/index.html
+          cp webapp/templates/stock.html site/stock.html
+          cp -R webapp/static site/static
+          touch site/.nojekyll
+          echo "stocks.sabaralogic.com" > site/CNAME
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy-site:
+    needs: build-site
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
