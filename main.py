@@ -8,12 +8,14 @@ import pandas as pd
 import textwrap
 
 from config import DEBUG_DATA_MODE, DEBUG_ENABLED, DEBUG_PREVIEW_ROWS
+from src.api_cache import analyze_cache_key, json_safe, scan_cache_key, write_cached_response
 from src.backtester import backtest_portfolio
 from src.data_fetcher import fetch_batch_stock_data, normalize_symbols
 from src.evaluator import evaluate_predictions, load_previous_predictions, save_predictions
 from src.indicators import add_rsi, add_moving_averages
 from src.stock_analysis import analyze_stock, format_stock_analysis, save_stock_analysis_report
 from src.strategy import evaluate_stock, rank_stocks
+from src.site_export import export_analyze_response, export_meta, export_scan_response
 
 from src.telegram_alert import send_telegram_message
 from src.telegram_alert import send_telegram_photo
@@ -278,6 +280,128 @@ def build_telegram_message(top_stocks: list[dict]) -> str:
 
     return "\n".join(lines)
 
+
+def build_scan_api_response(
+    symbols: list[str],
+    fetched_data: dict[str, pd.DataFrame],
+    evaluations: list[dict],
+    top_stocks: list[dict],
+    previous_predictions: pd.DataFrame,
+    saved_predictions: pd.DataFrame | None,
+) -> dict:
+    yesterday_performance = None
+    if previous_predictions is not None and not previous_predictions.empty:
+        evaluation_results, accuracy = evaluate_predictions(previous_predictions, fetched_data)
+        if evaluation_results:
+            yesterday_performance = {
+                "results": json_safe(evaluation_results),
+                "accuracy": accuracy,
+            }
+
+    response = {
+        "mode": "scan",
+        "symbols": symbols,
+        "fetched_symbol_count": len(fetched_data),
+        "fetched_symbols": sorted(fetched_data.keys()),
+        "evaluations": json_safe(evaluations),
+        "top_stocks": json_safe(top_stocks),
+        "saved_prediction_count": 0 if saved_predictions is None else len(saved_predictions),
+        "yesterday_performance": yesterday_performance,
+    }
+
+    if top_stocks:
+        response["telegram_message"] = build_telegram_message(top_stocks)
+
+    return response
+
+
+def build_analyze_api_response(
+    analysis: dict,
+    symbol: str,
+    *,
+    save_report: bool,
+) -> dict:
+    response = {
+        "mode": "analyze",
+        "stock": symbol,
+        "summary": json_safe(analysis["summary"]),
+        "insights": json_safe(analysis["insights"]),
+        "evaluation": json_safe(analysis["evaluation"]),
+        "turning_points": json_safe(analysis["turning_points"]),
+        "all_turning_points": json_safe(analysis["all_turning_points"]),
+        "predicted_turning_point": json_safe(analysis["predicted_turning_point"]),
+        "predicted_turning_points": json_safe(analysis.get("predicted_turning_points", [])),
+        "recent_data": json_safe(analysis["recent_data"].reset_index().to_dict(orient="records")),
+        "formatted_text": format_stock_analysis(analysis),
+    }
+
+    if save_report:
+        response["report_path"] = str(save_stock_analysis_report(analysis))
+
+    return response
+
+
+def precompute_api_caches(
+    args: argparse.Namespace,
+    symbols: list[str],
+    fetched_data: dict[str, pd.DataFrame],
+    evaluations: list[dict],
+    top_stocks: list[dict],
+    previous_predictions: pd.DataFrame,
+    saved_predictions: pd.DataFrame | None,
+) -> None:
+    scan_payload = {
+        "symbols": symbols,
+        "period": args.period,
+        "interval": args.interval,
+        "start": args.start,
+        "end": args.end,
+        "auto_adjust": not args.no_auto_adjust,
+        "top_n": 25,
+    }
+    scan_response = build_scan_api_response(
+        symbols,
+        fetched_data,
+        evaluations,
+        top_stocks,
+        previous_predictions,
+        saved_predictions,
+    )
+    write_cached_response("scan", scan_cache_key(scan_payload, symbols), scan_response)
+    export_scan_response(scan_response)
+
+    analyze_payload = {
+        "period": args.period,
+        "interval": args.interval,
+        "start": args.start,
+        "end": args.end,
+        "auto_adjust": not args.no_auto_adjust,
+        "turning_point_threshold": args.turning_point_threshold,
+        "save_report": True,
+    }
+
+    cached_analyze_count = 0
+    for symbol, data in sorted(fetched_data.items()):
+        if data is None or data.empty:
+            continue
+
+        analysis = analyze_stock(
+            data,
+            symbol,
+            turning_point_threshold_pct=args.turning_point_threshold,
+        )
+        analyze_response = build_analyze_api_response(analysis, symbol, save_report=True)
+        write_cached_response("analyze", analyze_cache_key(symbol, analyze_payload), analyze_response)
+        export_analyze_response(symbol, analyze_response)
+        cached_analyze_count += 1
+
+    export_meta(
+        symbol_count=len(symbols),
+        scan_path="/static/data/scan/default.json",
+        analyze_count=cached_analyze_count,
+    )
+    print(f"Precomputed API cache for 1 scan response and {cached_analyze_count} analyze responses.")
+
 def main() -> None:
     args = parse_args()
 
@@ -358,15 +482,23 @@ def main() -> None:
 
     # Rank top stocks
     top_stocks = rank_stocks(results, top_n=25)
+    saved_predictions = save_predictions(results)
+    precompute_api_caches(
+        args,
+        symbols,
+        result,
+        results,
+        top_stocks,
+        previous_predictions,
+        saved_predictions,
+    )
 
     if not top_stocks:
         print("\nNo stock opportunities to rank.")
         print("Check your fetch results, date range, or indicator inputs.")
         print("Possible reasons: market data unavailable, insufficient history, or no strong signals today.")
-        save_predictions(results)
         return
 
-    save_predictions(results)
     print("\n🔥 Top Opportunities:\n")
     for r in top_stocks:
         print(f"{r['stock']} → {r['signal']} (Score: {r['score']}, RSI: {round(r['rsi'], 2)})")

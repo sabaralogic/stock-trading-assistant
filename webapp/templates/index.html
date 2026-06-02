@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Stock Trading Assistant</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<div class="container">
+
+    <h1>📈 Stock Trading Assistant</h1>
+
+    <div class="search-box">
+        <input type="text" id="symbolInput" placeholder="BEL.NS">
+        <button onclick="analyzeStock()">Analyze</button>
+    </div>
+
+    <h2>Top Opportunities</h2>
+
+    <table id="stocksTable">
+        <thead>
+            <tr>
+                <th data-sort-key="rank">S.No</th>
+                <th data-sort-key="stock">Stock</th>
+                <th data-sort-key="signal">Signal</th>
+                <th data-sort-key="score">Score</th>
+                <th data-sort-key="rsi">RSI</th>
+            </tr>
+        </thead>
+
+        <tbody>
+        </tbody>
+    </table>
+
+</div>
+
+<script src="/static/js/index.js"></script>
+
+</body>
+</html>

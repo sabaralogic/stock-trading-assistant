@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Stock Analysis</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<div class="container">
+
+    <a href="/templates/index.html">← Back</a>
+
+    <h1 id="symbol"></h1>
+
+    <div id="summary"></div>
+
+    <h2>Insights</h2>
+    <ul id="insights"></ul>
+
+    <h2>Turning Points</h2>
+    <table id="turningPoints">
+        <thead>
+            <tr>
+                <th>Type</th>
+                <th>Date</th>
+                <th>Price</th>
+                <th>Swing %</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+</div>
+
+<script src="/static/js/stock.js"></script>
+
+</body>
+</html>
