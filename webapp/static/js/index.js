@@ -149,7 +149,7 @@ function renderStocks(stocks) {
             <td>${index + 1}</td>
 
             <td>
-                <a href="/templates/stock.html?symbol=${encodeURIComponent(stock.stock)}">
+                <a href="/stock.html?symbol=${encodeURIComponent(stock.stock)}">
                     ${stock.stock}
                 </a>
             </td>
@@ -175,7 +175,7 @@ function analyzeStock() {
         return;
 
     window.location.href =
-        `/templates/stock.html?symbol=${encodeURIComponent(symbol)}`;
+        `/stock.html?symbol=${encodeURIComponent(symbol)}`;
 }
 
 loadStocks();
