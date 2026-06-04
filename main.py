@@ -109,9 +109,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--end", help="End date in YYYY-MM-DD format.")
     parser.add_argument("--workers", type=int, default=5, help="Maximum concurrent fetches.")
     parser.add_argument(
-        "--no-auto-adjust",
+        "--auto-adjust",
+        dest="auto_adjust",
         action="store_true",
-        help="Keep raw OHLC prices instead of yfinance auto-adjusted prices.",
+        help="Use yfinance auto-adjusted prices instead of raw OHLC prices. Default: raw prices.",
+    )
+    parser.add_argument(
+        "--no-auto-adjust",
+        dest="auto_adjust",
+        action="store_false",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--backtest",
@@ -125,9 +132,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--turning-point-threshold",
         type=float,
-        default=10.0,
-        help="Minimum swing percentage required to show peaks and lows in analyze mode. Default: 10.0",
+        default=0.5,
+        help="Minimum swing percentage required to show peaks and lows in analyze mode. Default: 0.5",
     )
+    parser.set_defaults(auto_adjust=False)
     return parser.parse_args()
 
 def load_stocks_from_file(path: str) -> list[str]:
@@ -356,7 +364,7 @@ def precompute_api_caches(
         "interval": args.interval,
         "start": args.start,
         "end": args.end,
-        "auto_adjust": not args.no_auto_adjust,
+        "auto_adjust": args.auto_adjust,
         "top_n": 25,
     }
     scan_response = build_scan_api_response(
@@ -375,9 +383,9 @@ def precompute_api_caches(
         "interval": args.interval,
         "start": args.start,
         "end": args.end,
-        "auto_adjust": not args.no_auto_adjust,
+        "auto_adjust": args.auto_adjust,
         "turning_point_threshold": args.turning_point_threshold,
-        "save_report": True,
+        "save_report": False,
     }
 
     cached_analyze_count = 0
@@ -390,7 +398,7 @@ def precompute_api_caches(
             symbol,
             turning_point_threshold_pct=args.turning_point_threshold,
         )
-        analyze_response = build_analyze_api_response(analysis, symbol, save_report=True)
+        analyze_response = build_analyze_api_response(analysis, symbol, save_report=False)
         write_cached_response("analyze", analyze_cache_key(symbol, analyze_payload), analyze_response)
         export_analyze_response(symbol, analyze_response)
         cached_analyze_count += 1
@@ -418,7 +426,7 @@ def main() -> None:
             interval=args.interval,
             start=args.start,
             end=args.end,
-            auto_adjust=not args.no_auto_adjust,
+            auto_adjust=args.auto_adjust,
         )
 
         data = result.get(symbol)
@@ -447,7 +455,7 @@ def main() -> None:
         interval=args.interval,
         start=args.start,
         end=args.end,
-        auto_adjust=not args.no_auto_adjust,
+        auto_adjust=args.auto_adjust,
     )
 
     print(f"Fetched data for {len(result)} symbols.")

@@ -63,7 +63,7 @@ def analyze_stock(
         min_swing_pct=turning_point_threshold_pct,
     )
     predicted_turning_points = predict_next_turning_points(
-        turning_points,
+        all_turning_points,
         latest_available_date=enriched.index.max(),
         latest_available_price=close,
         count=2,
@@ -642,6 +642,40 @@ def _format_date(value: Any) -> str:
     return timestamp.date().isoformat()
 
 
+def _next_weekday(value: Any) -> pd.Timestamp:
+    timestamp = pd.to_datetime(value, errors="coerce")
+    if pd.isna(timestamp):
+        return timestamp
+
+    while timestamp.weekday() >= 5:
+        timestamp = timestamp + pd.Timedelta(days=1)
+
+    return timestamp
+
+
+def _business_days_between(start: Any, end: Any) -> int:
+    start_ts = pd.to_datetime(start, errors="coerce")
+    end_ts = pd.to_datetime(end, errors="coerce")
+    if pd.isna(start_ts) or pd.isna(end_ts):
+        return 1
+
+    start_day = start_ts.normalize()
+    end_day = end_ts.normalize()
+    if end_day <= start_day:
+        return 1
+
+    business_days = len(pd.bdate_range(start=start_day, end=end_day)) - 1
+    return max(business_days, 1)
+
+
+def _add_business_days(start: Any, days: int) -> pd.Timestamp:
+    start_ts = pd.to_datetime(start, errors="coerce")
+    if pd.isna(start_ts):
+        return start_ts
+
+    return start_ts + pd.offsets.BDay(max(int(days), 1))
+
+
 def dedupe_preserve_order(items: list[str]) -> list[str]:
     seen: set[str] = set()
     ordered: list[str] = []
@@ -669,9 +703,6 @@ def _find_raw_turning_points(data: pd.DataFrame) -> list[dict[str, Any]]:
     if len(close_series) < 3:
         return []
 
-    high_series = data["High"] if "High" in data.columns else close_series
-    low_series = data["Low"] if "Low" in data.columns else close_series
-
     raw_turning_points: list[dict[str, Any]] = []
     previous_direction = 0
 
@@ -691,10 +722,7 @@ def _find_raw_turning_points(data: pd.DataFrame) -> list[dict[str, Any]]:
         if current_direction != previous_direction:
             pivot_index = index - 1
             point_type = "Peak" if previous_direction > 0 else "Low"
-            pivot_series = high_series if point_type == "Peak" else low_series
-            pivot_price = _get_float(pivot_series.iloc[pivot_index])
-            if pd.isna(pivot_price):
-                pivot_price = _get_float(close_series.iloc[pivot_index])
+            pivot_price = _get_float(close_series.iloc[pivot_index])
             pivot_date = _format_date(close_series.index[pivot_index])
             raw_turning_points.append(
                 {
@@ -716,31 +744,62 @@ def _filter_turning_points_by_swing(
     if not turning_points:
         return []
 
+    points = [dict(point, swing_pct=float("nan")) for point in turning_points]
     filtered: list[dict[str, Any]] = []
-    anchor_point: dict[str, Any] | None = None
+    accepted_anchor = points[0]
+    candidate_point = points[0]
 
-    for point in turning_points:
-        point = point.copy()
-        point["swing_pct"] = float("nan")
-
-        if anchor_point is None:
-            anchor_point = point
-            continue
-
-        previous_price = _get_float(anchor_point["price"])
-        current_price = _get_float(point["price"])
-        if pd.isna(previous_price) or pd.isna(current_price) or previous_price == 0:
-            continue
-
-        swing_pct = abs((current_price - previous_price) / previous_price) * 100
-        if swing_pct >= min_swing_pct:
-            anchor_point["swing_pct"] = swing_pct
-            point["swing_pct"] = swing_pct
-            filtered.append(anchor_point)
+    def _append_if_new(point: dict[str, Any]) -> None:
+        if not filtered:
             filtered.append(point)
-            anchor_point = point
+            return
 
-    return dedupe_turning_points(filtered)
+        last = filtered[-1]
+        if (
+            str(last.get("type", "")) == str(point.get("type", ""))
+            and str(last.get("date", "")) == str(point.get("date", ""))
+            and round(_get_float(last.get("price")), 6) == round(_get_float(point.get("price")), 6)
+        ):
+            return
+
+        filtered.append(point)
+
+    for point in points[1:]:
+        anchor_price = _get_float(accepted_anchor.get("price"))
+        current_price = _get_float(point.get("price"))
+        if pd.isna(anchor_price) or pd.isna(current_price) or anchor_price == 0:
+            continue
+
+        candidate_price = _get_float(candidate_point.get("price"))
+        candidate_type = str(candidate_point.get("type", ""))
+        current_type = str(point.get("type", ""))
+
+        if pd.notna(candidate_price):
+            if current_type == candidate_type == "Peak" and current_price > candidate_price:
+                candidate_point = point
+                current_price = _get_float(candidate_point.get("price"))
+            elif current_type == candidate_type == "Low" and current_price < candidate_price:
+                candidate_point = point
+                current_price = _get_float(candidate_point.get("price"))
+            elif current_type != candidate_type:
+                candidate_point = point
+                current_price = _get_float(candidate_point.get("price"))
+        else:
+            candidate_point = point
+            current_price = _get_float(candidate_point.get("price"))
+
+        swing_pct = abs((current_price - anchor_price) / anchor_price) * 100
+        if swing_pct < min_swing_pct:
+            continue
+
+        accepted_anchor["swing_pct"] = swing_pct
+        candidate_point["swing_pct"] = swing_pct
+        _append_if_new(accepted_anchor)
+        _append_if_new(candidate_point)
+        accepted_anchor = candidate_point
+        candidate_point = accepted_anchor
+
+    return filtered
 
 
 def dedupe_turning_points(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -783,7 +842,7 @@ def predict_next_turning_points(
         return []
 
     fallback_swing_pct = abs((last_price - fallback_first_price) / fallback_first_price) * 100
-    fallback_days = max((last_date - fallback_first_date).days, 1)
+    fallback_days = _business_days_between(fallback_first_date, last_date)
 
     def _transition_stats(from_type: str, to_type: str) -> tuple[float, int]:
         candidate_swings: list[float] = []
@@ -808,7 +867,7 @@ def predict_next_turning_points(
                 continue
 
             candidate_swings.append(abs((second_price - first_price) / first_price) * 100)
-            candidate_days.append(max((second_date - first_date).days, 1))
+            candidate_days.append(_business_days_between(first_date, second_date))
 
         if candidate_swings and candidate_days:
             return sum(candidate_swings) / len(candidate_swings), max(
@@ -833,7 +892,7 @@ def predict_next_turning_points(
         else:
             projected_price = current_price * (1 - projected_swing_pct / 100)
 
-        projected_date = current_date + pd.Timedelta(days=projected_days)
+        projected_date = _add_business_days(current_date, projected_days)
         projected_turning_point = {
             "type": target_type,
             "date": _format_date(projected_date),

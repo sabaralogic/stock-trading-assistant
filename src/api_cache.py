@@ -115,7 +115,7 @@ def analyze_cache_key(symbol: str, payload: dict[str, Any]) -> dict[str, Any]:
         "start": payload.get("start"),
         "end": payload.get("end"),
         "auto_adjust": bool_value(payload, "auto_adjust", True),
-        "turning_point_threshold": float(payload.get("turning_point_threshold", 10.0)),
+        "turning_point_threshold": float(payload.get("turning_point_threshold", 0.5)),
         "save_report": bool_value(payload, "save_report", True),
     }
 

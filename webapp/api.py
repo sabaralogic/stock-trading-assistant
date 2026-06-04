@@ -264,7 +264,7 @@ def _run_analysis(symbol: str, payload: dict[str, Any]) -> dict[str, Any]:
     analysis = analyze_stock(
         data,
         normalized_symbol,
-        turning_point_threshold_pct=float(payload.get("turning_point_threshold", 10.0)),
+        turning_point_threshold_pct=float(payload.get("turning_point_threshold", 0.5)),
     )
 
     response = {
