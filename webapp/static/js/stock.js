@@ -52,8 +52,10 @@ async function loadAnalysis() {
             </p>
         `;
 
+    renderExpectedReturnInfo(data.summary || {});
+
     renderTurningPointChart(
-        data.all_turning_points || [],
+        data.chart_turning_points || data.all_turning_points || [],
         data.predicted_turning_points || []
     );
 
@@ -67,6 +69,193 @@ async function loadAnalysis() {
         insights.innerHTML +=
             `<li>${i}</li>`;
     });
+
+    renderRecentDataTable(data.recent_data || []);
+    renderHeuristicDataTable(data.predicted_turning_points || []);
+}
+
+function renderExpectedReturnInfo(summary) {
+
+    const container =
+        document.getElementById("expectedReturnInfo");
+
+    if (!container) {
+        return;
+    }
+
+    const expectedReturn =
+        Number(summary.expected_xirr);
+    const expectedEntryPrice =
+        Number(summary.expected_entry_price);
+    const expectedLowPrice =
+        Number(summary.expected_low_price);
+    const expectedPeakPrice =
+        Number(summary.expected_peak_price);
+    const daysToPeak =
+        Number(summary.expected_peak_days);
+    const entryDate =
+        summary.expected_entry_date
+            ? formatFullDate(new Date(summary.expected_entry_date))
+            : "N/A";
+    const lowDate =
+        summary.expected_low_date
+            ? formatFullDate(new Date(summary.expected_low_date))
+            : "N/A";
+    const peakDate =
+        summary.expected_peak_date
+            ? formatFullDate(new Date(summary.expected_peak_date))
+            : "N/A";
+
+    if (
+        !Number.isFinite(expectedReturn) ||
+        !Number.isFinite(expectedEntryPrice) ||
+        !Number.isFinite(expectedLowPrice) ||
+        !Number.isFinite(expectedPeakPrice) ||
+        !Number.isFinite(daysToPeak) ||
+        daysToPeak <= 0
+    ) {
+        container.innerHTML = `
+            <section class="metric-explainer">
+                <h2>Expected Annualized Return - with heuristics</h2>
+                <p class="metric-empty">
+                    No projected annualized return is available from the current heuristic path.
+                </p>
+            </section>
+        `;
+        return;
+    }
+
+    const usesCurrentClose =
+        expectedEntryPrice < expectedLowPrice;
+    const calculationText =
+        `((${formatNumber(expectedPeakPrice)} - ${formatNumber(expectedEntryPrice)}) / ${formatNumber(expectedEntryPrice)}) / ${daysToPeak} * 365 * 100 = ${formatPercent(expectedReturn)}`;
+
+    container.innerHTML = `
+        <section class="metric-explainer">
+            <h2>Expected Annualized Return - with heuristics</h2>
+            <p class="metric-value">${formatPercent(expectedReturn)}</p>
+            <p class="metric-note">
+                Based on the selected heuristic low on ${escapeHtml(lowDate)} and the selected following heuristic peak on ${escapeHtml(peakDate)}.
+            </p>
+            <p class="metric-note">
+                Effective Entry: ${escapeHtml(formatNumber(expectedEntryPrice))} on ${escapeHtml(entryDate)}${usesCurrentClose ? " (current close used because it is lower than the heuristic low)" : ""} |
+            </p>
+            <p class="metric-note">
+                Heuristic Low: ${escapeHtml(formatNumber(expectedLowPrice))} |
+                Heuristic High: ${escapeHtml(formatNumber(expectedPeakPrice))} |
+                Days: ${escapeHtml(String(daysToPeak))}
+            </p>
+            <pre class="metric-formula">${escapeHtml(calculationText)}</pre>
+        </section>
+    `;
+}
+
+function renderRecentDataTable(rows) {
+
+    const container =
+        document.getElementById("recentData");
+
+    if (!container) {
+        return;
+    }
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+        container.innerHTML =
+            '<div class="chart-empty">No recent stock data available.</div>';
+        return;
+    }
+
+    const orderedRows =
+        [...rows].reverse();
+    const columns =
+        ["Date", "Open", "High", "Low", "Close", "Volume", "RSI", "MA50", "MA200"]
+            .filter(column => Object.prototype.hasOwnProperty.call(orderedRows[0], column));
+
+    const headerHtml =
+        columns.map(column => `<th>${escapeHtml(column)}</th>`).join("");
+
+    const bodyHtml =
+        orderedRows.map(row => {
+            const cells = columns.map(column => {
+                let value = row[column];
+
+                if (column === "Date") {
+                    value = formatFullDate(new Date(value));
+                } else if (column === "Volume") {
+                    value = formatInteger(value);
+                } else {
+                    value = formatNumber(value);
+                }
+
+                return `<td>${escapeHtml(String(value))}</td>`;
+            }).join("");
+
+            return `<tr>${cells}</tr>`;
+        }).join("");
+
+    container.innerHTML = `
+        <table class="recent-data-table">
+            <thead>
+                <tr>${headerHtml}</tr>
+            </thead>
+            <tbody>
+                ${bodyHtml}
+            </tbody>
+        </table>
+    `;
+}
+
+function renderHeuristicDataTable(rows) {
+
+    const container =
+        document.getElementById("heuristicData");
+
+    if (!container) {
+        return;
+    }
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+        container.innerHTML =
+            '<div class="chart-empty">No heuristic data available.</div>';
+        return;
+    }
+
+    const bodyHtml =
+        rows.map(row => {
+            const date =
+                formatFullDate(new Date(row.date));
+            const type =
+                row.type || "";
+            const price =
+                formatNumber(row.price);
+            const swing =
+                formatPercent(row.projected_swing_pct);
+
+            return `
+                <tr>
+                    <td>${escapeHtml(String(date))}</td>
+                    <td>${escapeHtml(String(type))}</td>
+                    <td>${escapeHtml(String(price))}</td>
+                    <td>${escapeHtml(String(swing))}</td>
+                </tr>
+            `;
+        }).join("");
+
+    container.innerHTML = `
+        <table class="heuristic-data-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Type</th>
+                    <th>Price</th>
+                    <th>Swing</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${bodyHtml}
+            </tbody>
+        </table>
+    `;
 }
 
 function renderTurningPointChart(turningPoints, predictedTurningPoints) {
@@ -256,7 +445,7 @@ function toChartPoint(point, projected) {
     }
 
     return {
-        type: point.type || (projected ? "Projected" : ""),
+        type: point.type || (projected ? "Projected" : "Latest"),
         date,
         price,
         projected,
@@ -368,6 +557,16 @@ function formatNumber(value) {
     }
 
     return numericValue.toFixed(2);
+}
+
+function formatInteger(value) {
+
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+        return "N/A";
+    }
+
+    return Math.round(numericValue).toString();
 }
 
 function formatPercent(value) {

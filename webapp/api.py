@@ -33,9 +33,13 @@ from src.api_cache import (
 )
 from src.data_fetcher import fetch_batch_stock_data, normalize_symbols
 from src.evaluator import evaluate_predictions, load_previous_predictions, save_predictions
-from src.indicators import add_moving_averages, add_rsi
-from src.stock_analysis import analyze_stock, format_stock_analysis, save_stock_analysis_report
-from src.strategy import evaluate_stock, rank_stocks
+from src.stock_analysis import (
+    analyze_stock,
+    attach_analysis_metrics_to_evaluation,
+    format_stock_analysis,
+    save_stock_analysis_report,
+)
+from src.strategy import rank_stocks
 from src.telegram_alert import send_telegram_message
 
 NIFTY500_URL = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
@@ -151,8 +155,17 @@ def _run_scan(payload: dict[str, Any]) -> dict[str, Any]:
         if data is None or data.empty:
             continue
 
-        enriched = add_moving_averages(add_rsi(data))
-        evaluations.append(evaluate_stock(enriched, symbol))
+        analysis = analyze_stock(
+            data,
+            symbol,
+            turning_point_threshold_pct=float(payload.get("turning_point_threshold", 0.5)),
+        )
+        evaluations.append(
+            attach_analysis_metrics_to_evaluation(
+                analysis["evaluation"],
+                analysis,
+            )
+        )
 
     yesterday_performance = _build_yesterday_performance(result)
     top_n = int(payload.get("top_n", 25))
@@ -275,6 +288,7 @@ def _run_analysis(symbol: str, payload: dict[str, Any]) -> dict[str, Any]:
         "evaluation": json_safe(analysis["evaluation"]),
         "turning_points": json_safe(analysis["turning_points"]),
         "all_turning_points": json_safe(analysis["all_turning_points"]),
+        "chart_turning_points": json_safe(analysis.get("chart_turning_points", analysis["all_turning_points"])),
         "predicted_turning_point": json_safe(analysis["predicted_turning_point"]),
         "predicted_turning_points": json_safe(analysis.get("predicted_turning_points", [])),
         "recent_data": _frame_to_records(analysis["recent_data"]),

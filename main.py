@@ -13,8 +13,13 @@ from src.backtester import backtest_portfolio
 from src.data_fetcher import fetch_batch_stock_data, normalize_symbols
 from src.evaluator import evaluate_predictions, load_previous_predictions, save_predictions
 from src.indicators import add_rsi, add_moving_averages
-from src.stock_analysis import analyze_stock, format_stock_analysis, save_stock_analysis_report
-from src.strategy import evaluate_stock, rank_stocks
+from src.stock_analysis import (
+    analyze_stock,
+    attach_analysis_metrics_to_evaluation,
+    format_stock_analysis,
+    save_stock_analysis_report,
+)
+from src.strategy import rank_stocks
 from src.site_export import export_analyze_response, export_meta, export_scan_response
 
 from src.telegram_alert import send_telegram_message
@@ -337,6 +342,7 @@ def build_analyze_api_response(
         "evaluation": json_safe(analysis["evaluation"]),
         "turning_points": json_safe(analysis["turning_points"]),
         "all_turning_points": json_safe(analysis["all_turning_points"]),
+        "chart_turning_points": json_safe(analysis.get("chart_turning_points", analysis["all_turning_points"])),
         "predicted_turning_point": json_safe(analysis["predicted_turning_point"]),
         "predicted_turning_points": json_safe(analysis.get("predicted_turning_points", [])),
         "recent_data": json_safe(analysis["recent_data"].reset_index().to_dict(orient="records")),
@@ -478,8 +484,15 @@ def main() -> None:
         df = add_rsi(data)
         df = add_moving_averages(df)
 
-        # Evaluate stock
-        evaluation = evaluate_stock(df, symbol)
+        analysis = analyze_stock(
+            data,
+            symbol,
+            turning_point_threshold_pct=args.turning_point_threshold,
+        )
+        evaluation = attach_analysis_metrics_to_evaluation(
+            analysis["evaluation"],
+            analysis,
+        )
         results.append(evaluation)
 
         if DEBUG_ENABLED:

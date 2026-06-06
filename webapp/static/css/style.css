@@ -15,6 +15,40 @@ h1 {
     color: #222;
 }
 
+.metric-explainer {
+    background: white;
+    border: 1px solid #ddd;
+    padding: 16px;
+    margin: 16px 0 24px;
+}
+
+.metric-explainer h2 {
+    margin: 0 0 12px;
+}
+
+.metric-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: #111827;
+    margin: 0 0 8px;
+}
+
+.metric-note,
+.metric-empty {
+    color: #4b5563;
+    margin: 8px 0;
+}
+
+.metric-formula {
+    margin: 12px 0 0;
+    padding: 12px;
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 .search-box {
     margin-bottom: 20px;
 }
@@ -35,17 +69,138 @@ table {
     background: white;
 }
 
+.stocks-table {
+    table-layout: fixed;
+    font-size: 13px;
+}
+
+.stocks-table col.col-rank {
+    width: 4%;
+}
+
+.stocks-table col.col-stock {
+    width: 18%;
+}
+
+.stocks-table col.col-signal {
+    width: 3.5%;
+}
+
+.stocks-table col.col-score {
+    width: 2.5%;
+}
+
+.stocks-table col.col-rsi {
+    width: 5%;
+}
+
+.stocks-table col.col-close {
+    width: 8%;
+}
+
+.stocks-table col.col-buy-date {
+    width: 7%;
+}
+
+.stocks-table col.col-buy-price {
+    width: 7%;
+}
+
+.stocks-table col.col-sell-date {
+    width: 9%;
+}
+
+.stocks-table col.col-sell-price {
+    width: 8%;
+}
+
+.stocks-table col.col-diff-days {
+    width: 2.5%;
+}
+
+.stocks-table col.col-diff-price {
+    width: 5%;
+}
+
+.stocks-table col.col-xirr {
+    width: 8.5%;
+}
+
 th {
     background: #1f2937;
     color: white;
     cursor: pointer;
     user-select: none;
+    line-height: 1.2;
+    padding: 8px 6px;
+    white-space: nowrap;
+}
+
+th.two-line-header {
+    white-space: normal;
+    min-width: 0;
+    line-height: 1.15;
+}
+
+.header-group-row th {
+    text-align: center;
+    vertical-align: middle;
 }
 
 th,
 td {
     border: 1px solid #ddd;
-    padding: 10px;
+    padding: 8px 6px;
+}
+
+.stocks-table td {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-variant-numeric: tabular-nums;
+}
+
+.stocks-table th:nth-child(1),
+.stocks-table td:nth-child(1) {
+    text-align: center;
+}
+
+.stocks-table th:nth-child(2),
+.stocks-table td:nth-child(2) {
+    text-align: left;
+}
+
+.stocks-table th:nth-child(4),
+.stocks-table td:nth-child(4),
+.stocks-table th:nth-child(5),
+.stocks-table td:nth-child(5),
+.stocks-table th:nth-child(6),
+.stocks-table td:nth-child(6),
+.stocks-table th:nth-child(8),
+.stocks-table td:nth-child(8),
+.stocks-table th:nth-child(10),
+.stocks-table td:nth-child(10),
+.stocks-table th:nth-child(11),
+.stocks-table td:nth-child(11),
+.stocks-table th:nth-child(12),
+.stocks-table td:nth-child(12),
+.stocks-table th:nth-child(13),
+.stocks-table td:nth-child(13) {
+    text-align: right;
+}
+
+.stocks-table th:nth-child(7),
+.stocks-table td:nth-child(7),
+.stocks-table th:nth-child(9),
+.stocks-table td:nth-child(9) {
+    text-align: right;
+}
+
+.stocks-table td:nth-child(2) a {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 th.sorted {
@@ -115,4 +270,11 @@ tr:nth-child(even) {
 
 .chart-tooltip.visible {
     visibility: visible;
+}
+
+.recent-data-table th,
+.recent-data-table td,
+.heuristic-data-table th,
+.heuristic-data-table td {
+    font-size: 13px;
 }

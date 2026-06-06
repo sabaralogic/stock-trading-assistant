@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Stock Trading Assistant</title>
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260606c">
 </head>
 <body>
 
@@ -16,16 +16,93 @@
         <button onclick="analyzeStock()">Analyze</button>
     </div>
 
+    <h2>Top BUY Opportunities</h2>
+
+    <table id="buyStocksTable" class="stocks-table">
+        <colgroup>
+            <col class="col-rank">
+            <col class="col-stock">
+            <col class="col-signal">
+            <col class="col-score">
+            <col class="col-rsi">
+            <col class="col-close">
+            <col class="col-buy-date">
+            <col class="col-buy-price">
+            <col class="col-sell-date">
+            <col class="col-sell-price">
+            <col class="col-diff-days">
+            <col class="col-diff-price">
+            <col class="col-xirr">
+        </colgroup>
+        <thead>
+            <tr class="header-group-row">
+                <th rowspan="2">S.No</th>
+                <th rowspan="2">Stock</th>
+                <th rowspan="2">Signal</th>
+                <th rowspan="2">Score</th>
+                <th rowspan="2">RSI</th>
+                <th rowspan="2">Last Close</th>
+                <th colspan="2">Expected Buy</th>
+                <th colspan="2">Expected Sell</th>
+                <th colspan="2">Difference</th>
+                <th rowspan="2" class="two-line-header">
+                    Expected Annualized Return<br>with heuristics
+                </th>
+            </tr>
+            <tr>
+                <th>Date</th>
+                <th>Price</th>
+                <th>Date</th>
+                <th>Price</th>
+                <th>Days</th>
+                <th>Price</th>
+            </tr>
+        </thead>
+
+        <tbody>
+        </tbody>
+    </table>
+
     <h2>Top Opportunities</h2>
 
-    <table id="stocksTable">
+    <table id="stocksTable" class="stocks-table">
+        <colgroup>
+            <col class="col-rank">
+            <col class="col-stock">
+            <col class="col-signal">
+            <col class="col-score">
+            <col class="col-rsi">
+            <col class="col-close">
+            <col class="col-buy-date">
+            <col class="col-buy-price">
+            <col class="col-sell-date">
+            <col class="col-sell-price">
+            <col class="col-diff-days">
+            <col class="col-diff-price">
+            <col class="col-xirr">
+        </colgroup>
         <thead>
+            <tr class="header-group-row">
+                <th rowspan="2" data-sort-key="rank">S.No</th>
+                <th rowspan="2" data-sort-key="stock">Stock</th>
+                <th rowspan="2" data-sort-key="signal">Signal</th>
+                <th rowspan="2" data-sort-key="score">Score</th>
+                <th rowspan="2" data-sort-key="rsi">RSI</th>
+                <th rowspan="2" data-sort-key="close">Last Close</th>
+                <th colspan="2">Expected Buy</th>
+                <th colspan="2">Expected Sell</th>
+                <th colspan="2">Difference</th>
+                <th rowspan="2" data-sort-key="expected_xirr" class="two-line-header">
+                    Expected Annualized Return<br>with heuristics
+                </th>
+            </tr>
             <tr>
-                <th data-sort-key="rank">S.No</th>
-                <th data-sort-key="stock">Stock</th>
-                <th data-sort-key="signal">Signal</th>
-                <th data-sort-key="score">Score</th>
-                <th data-sort-key="rsi">RSI</th>
+                <th data-sort-key="expected_entry_date">Date</th>
+                <th data-sort-key="expected_entry_price">Price</th>
+                <th data-sort-key="expected_peak_date">Date</th>
+                <th data-sort-key="expected_peak_price">Price</th>
+                <th data-sort-key="expected_peak_days">Days</th>
+                <th data-sort-key="expected_profit_price">Price</th>
             </tr>
         </thead>
 
@@ -35,7 +112,7 @@
 
 </div>
 
-<script src="/static/js/index.js"></script>
+<script src="/static/js/index.js?v=20260606c"></script>
 
 </body>
 </html>

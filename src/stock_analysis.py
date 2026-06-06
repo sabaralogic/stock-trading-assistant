@@ -57,24 +57,35 @@ def analyze_stock(
     insights = dedupe_preserve_order(insights)
 
     recent_data = enriched[[column for column in ANALYSIS_COLUMNS if column in enriched.columns]].tail(10).copy()
-    all_turning_points = _find_raw_turning_points(enriched)
+    raw_turning_points = _find_raw_turning_points(enriched)
+    chart_turning_points = _append_latest_close_point(
+        raw_turning_points,
+        enriched.index.max(),
+        close,
+    )
     turning_points = find_turning_points(
         enriched,
         min_swing_pct=turning_point_threshold_pct,
     )
     predicted_turning_points = predict_next_turning_points(
-        all_turning_points,
+        raw_turning_points,
         latest_available_date=enriched.index.max(),
         latest_available_price=close,
-        count=2,
+        count=10,
     )
     predicted_turning_point = predicted_turning_points[0] if predicted_turning_points else None
+    expected_gain = compute_expected_gain_metric(
+        close=close,
+        latest_actual_date=enriched.index.max(),
+        predicted_turning_points=predicted_turning_points,
+    )
 
     return {
         "stock": stock,
         "data": enriched,
         "recent_data": recent_data,
-        "all_turning_points": all_turning_points,
+        "all_turning_points": raw_turning_points,
+        "chart_turning_points": chart_turning_points,
         "turning_points": turning_points,
         "predicted_turning_point": predicted_turning_point,
         "predicted_turning_points": predicted_turning_points,
@@ -97,9 +108,156 @@ def analyze_stock(
             "period_low": period_low,
             "avg_volume_20": avg_volume_20,
             "turning_point_threshold_pct": turning_point_threshold_pct,
+            "expected_xirr": expected_gain["annualized_gain"],
+            "expected_entry_price": expected_gain["entry_price"],
+            "expected_entry_date": expected_gain["entry_date"],
+            "expected_low_price": expected_gain["low_price"],
+            "expected_low_date": expected_gain["low_date"],
+            "expected_peak_price": expected_gain["peak_price"],
+            "expected_peak_date": expected_gain["peak_date"],
+            "expected_peak_days": expected_gain["days_to_peak"],
         },
         "insights": insights,
     }
+
+
+def compute_expected_gain_metric(
+    *,
+    close: float,
+    latest_actual_date,
+    predicted_turning_points: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if pd.isna(close) or not predicted_turning_points:
+        return {
+            "annualized_gain": None,
+            "entry_price": None,
+            "entry_date": None,
+            "low_price": None,
+            "low_date": None,
+            "peak_price": None,
+            "peak_date": None,
+            "days_to_peak": None,
+        }
+
+    latest_date = pd.Timestamp(latest_actual_date).normalize()
+    target_low = None
+    target_peak = None
+    best_gain_pct = None
+
+    future_lows = []
+    future_peaks = []
+
+    for point in predicted_turning_points:
+        point_date = pd.Timestamp(point.get("date")).normalize()
+        point_price = _get_float(point.get("price"))
+
+        if pd.isna(point_price) or point_date <= latest_date:
+            continue
+
+        normalized_point = {
+            "date": point_date,
+            "price": point_price,
+        }
+
+        if point.get("type") == "Low":
+            future_lows.append(normalized_point)
+        elif point.get("type") == "Peak":
+            future_peaks.append(normalized_point)
+
+    for low_point in future_lows:
+        for peak_point in future_peaks:
+            if peak_point["date"] <= low_point["date"]:
+                continue
+
+            if close < low_point["price"]:
+                entry_price = close
+                entry_date = latest_date
+            else:
+                entry_price = low_point["price"]
+                entry_date = low_point["date"]
+
+            days_to_peak = int((peak_point["date"] - entry_date).days)
+            if days_to_peak <= 0:
+                continue
+
+            gain_pct = (
+                ((peak_point["price"] - entry_price) / entry_price)
+                * 100
+            )
+
+            if best_gain_pct is None or gain_pct > best_gain_pct:
+                best_gain_pct = gain_pct
+                target_low = low_point
+                target_peak = peak_point
+
+    if target_low is None or target_peak is None:
+        return {
+            "annualized_gain": None,
+            "entry_price": None,
+            "entry_date": None,
+            "low_price": None,
+            "low_date": None,
+            "peak_price": None,
+            "peak_date": None,
+            "days_to_peak": None,
+        }
+
+    if close < target_low["price"]:
+        entry_price = close
+        entry_date = latest_date
+    else:
+        entry_price = target_low["price"]
+        entry_date = target_low["date"]
+
+    days_to_peak = int((target_peak["date"] - entry_date).days)
+    if days_to_peak <= 0:
+        return {
+            "annualized_gain": None,
+            "entry_price": entry_price,
+            "entry_date": entry_date,
+            "low_price": target_low["price"],
+            "low_date": target_low["date"],
+            "peak_price": target_peak["price"],
+            "peak_date": target_peak["date"],
+            "days_to_peak": None,
+        }
+
+    annualized_gain = (
+        ((target_peak["price"] - entry_price) / entry_price)
+        / days_to_peak
+        * 365
+        * 100
+    )
+
+    return {
+        "annualized_gain": annualized_gain,
+        "entry_price": entry_price,
+        "entry_date": entry_date,
+        "low_price": target_low["price"],
+        "low_date": target_low["date"],
+        "peak_price": target_peak["price"],
+        "peak_date": target_peak["date"],
+        "days_to_peak": days_to_peak,
+    }
+
+
+def attach_analysis_metrics_to_evaluation(
+    evaluation: dict[str, Any] | None,
+    analysis: dict[str, Any],
+) -> dict[str, Any] | None:
+    if not evaluation:
+        return evaluation
+
+    summary = analysis.get("summary", {})
+    evaluation["expected_xirr"] = summary.get("expected_xirr")
+    evaluation["expected_entry_price"] = summary.get("expected_entry_price")
+    evaluation["expected_entry_date"] = summary.get("expected_entry_date")
+    evaluation["expected_low_price"] = summary.get("expected_low_price")
+    evaluation["expected_low_date"] = summary.get("expected_low_date")
+    evaluation["expected_peak_price"] = summary.get("expected_peak_price")
+    evaluation["expected_peak_date"] = summary.get("expected_peak_date")
+    evaluation["expected_peak_days"] = summary.get("expected_peak_days")
+    return evaluation
 
 
 def build_stock_insights(
@@ -686,6 +844,32 @@ def dedupe_preserve_order(items: list[str]) -> list[str]:
     return ordered
 
 
+def _append_latest_close_point(
+    turning_points: list[dict[str, Any]],
+    latest_date: Any,
+    latest_close: Any,
+) -> list[dict[str, Any]]:
+    if not turning_points:
+        return turning_points
+
+    latest_timestamp = pd.to_datetime(latest_date, errors="coerce")
+    latest_price = _get_float(latest_close)
+    if pd.isna(latest_timestamp) or pd.isna(latest_price):
+        return turning_points
+
+    last_point = turning_points[-1]
+    last_date = pd.to_datetime(last_point.get("date"), errors="coerce")
+    if pd.isna(last_date) or latest_timestamp <= last_date:
+        return turning_points
+
+    latest_point = {
+        "type": "Latest",
+        "date": _format_date(latest_timestamp),
+        "price": latest_price,
+    }
+    return [*turning_points, latest_point]
+
+
 def find_turning_points(
     data: pd.DataFrame,
     *,
@@ -844,14 +1028,11 @@ def predict_next_turning_points(
     fallback_swing_pct = abs((last_price - fallback_first_price) / fallback_first_price) * 100
     fallback_days = _business_days_between(fallback_first_date, last_date)
 
-    def _transition_stats(from_type: str, to_type: str) -> tuple[float, int]:
-        candidate_swings: list[float] = []
-        candidate_days: list[int] = []
+    def _transition_sequences() -> dict[tuple[str, str], list[tuple[float, int]]]:
+        sequences: dict[tuple[str, str], list[tuple[float, int]]] = {}
         for first, second in zip(turning_points, turning_points[1:]):
             first_type = str(first.get("type", ""))
             second_type = str(second.get("type", ""))
-            if first_type != from_type or second_type != to_type:
-                continue
 
             first_price = _get_float(first.get("price"))
             second_price = _get_float(second.get("price"))
@@ -866,14 +1047,41 @@ def predict_next_turning_points(
             ):
                 continue
 
-            candidate_swings.append(abs((second_price - first_price) / first_price) * 100)
-            candidate_days.append(_business_days_between(first_date, second_date))
-
-        if candidate_swings and candidate_days:
-            return sum(candidate_swings) / len(candidate_swings), max(
-                int(round(sum(candidate_days) / len(candidate_days))),
-                1,
+            transition_key = (first_type, second_type)
+            sequences.setdefault(transition_key, []).append(
+                (
+                    abs((second_price - first_price) / first_price) * 100,
+                    _business_days_between(first_date, second_date),
+                )
             )
+
+        for transition_key, values in sequences.items():
+            sequences[transition_key] = list(reversed(values))
+
+        return sequences
+
+    transition_sequences = _transition_sequences()
+    transition_usage: dict[tuple[str, str], int] = {}
+
+    def _transition_stats(from_type: str, to_type: str) -> tuple[float, int]:
+        transition_key = (from_type, to_type)
+        sequence = transition_sequences.get(transition_key, [])
+
+        if sequence:
+            occurrence_index = transition_usage.get(transition_key, 0)
+            if occurrence_index < len(sequence):
+                result = sequence[occurrence_index]
+            else:
+                recent_window = sequence[: min(3, len(sequence))]
+                avg_swing = sum(item[0] for item in recent_window) / len(recent_window)
+                avg_days = max(
+                    int(round(sum(item[1] for item in recent_window) / len(recent_window))),
+                    1,
+                )
+                result = (avg_swing, avg_days)
+
+            transition_usage[transition_key] = occurrence_index + 1
+            return result
 
         return fallback_swing_pct, fallback_days
 
