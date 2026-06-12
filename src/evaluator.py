@@ -39,14 +39,18 @@ def save_predictions(results: Iterable[dict]) -> pd.DataFrame:
     if new_predictions.empty:
         return new_predictions
 
+    new_predictions = new_predictions.drop_duplicates(subset=["date", "stock"], keep="last")
+
     PREDICTIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
 
     if PREDICTIONS_FILE.exists() and PREDICTIONS_FILE.stat().st_size > 0:
         existing = pd.read_csv(PREDICTIONS_FILE)
+        existing = existing.loc[existing["date"] != today].copy()
         combined = pd.concat([existing, new_predictions], ignore_index=True)
     else:
         combined = new_predictions
 
+    combined = combined.drop_duplicates(subset=["date", "stock"], keep="last")
     combined.to_csv(PREDICTIONS_FILE, index=False)
     return new_predictions
 
@@ -73,6 +77,7 @@ def load_previous_predictions() -> pd.DataFrame:
     latest_predictions = predictions.loc[
         predictions["date"] == previous_date
     ].copy()
+    latest_predictions = latest_predictions.drop_duplicates(subset=["stock"], keep="last")
     latest_predictions["date"] = latest_predictions["date"].dt.date.astype(str)
     
     return latest_predictions.reset_index(drop=True)

@@ -4,3 +4,4 @@ __pycache__/
 data/predictions.csv
 .env
 site/
+scripts/build_site.sh

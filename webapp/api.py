@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import errno
+import html
 import json
 import os
 import sys
@@ -108,22 +109,27 @@ def _fetch_data(symbols: list[str], payload: dict[str, Any], *, max_workers: int
 
 
 def _build_telegram_message(top_stocks: list[dict[str, Any]]) -> str:
-    lines = ["🔥 <b>Top Opportunities</b>\n"]
+    lines = [
+        "🔥 <b>Top Opportunities</b>",
+        "<b># | Stock | Signal | Return</b>",
+    ]
 
     for index, stock in enumerate(top_stocks, start=1):
-        rsi = stock.get("rsi")
-        rsi_text = round(rsi, 2) if pd.notna(rsi) else "N/A"
+        symbol = str(stock["stock"]).upper()
+        stock_link = f"https://stocks.sabaralogic.com/stock.html?symbol={symbol}"
+        signal = html.escape(str(stock["signal"]))
+        stock_label = html.escape(symbol)
+        expected_annualized = stock.get("expected_xirr")
+        expected_annualized_text = (
+            f"{expected_annualized:.2f}%"
+            if pd.notna(expected_annualized)
+            else "N/A"
+        )
 
-        lines.append(f"<b>{index}. {stock['stock']}</b>")
-        lines.append(f"Signal : {stock['signal']}")
-        lines.append(f"Score  : {stock['score']}")
-        lines.append(f"RSI    : {rsi_text}\n")
-        lines.append("<b>Reasons</b>")
-
-        for reason in stock.get("reasons", []):
-            lines.append(f"• {reason}")
-
-        lines.append("\n━━━━━━━━━━━━━━\n")
+        lines.append(
+            f"{index} | <a href=\"{stock_link}\">{stock_label}</a> | "
+            f"{signal} | {expected_annualized_text}"
+        )
 
     return "\n".join(lines)
 

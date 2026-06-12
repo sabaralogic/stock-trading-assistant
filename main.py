@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import argparse
+import html
 from pathlib import Path
 
 import pandas as pd
@@ -199,6 +200,24 @@ def print_yesterday_performance(previous_predictions, current_data) -> None:
         return
 
     print("\n📊 Yesterday Performance:\n")
+    missing_count = sum(
+        1 for evaluation in evaluation_results if evaluation["status"] == "missing_current_data"
+    )
+    graded_results = [
+        evaluation
+        for evaluation in evaluation_results
+        if evaluation["status"] != "missing_current_data"
+    ]
+    correct_count = sum(1 for evaluation in graded_results if evaluation["correct"])
+    wrong_count = sum(1 for evaluation in graded_results if evaluation["correct"] is False)
+
+    print(f"Evaluated: {len(graded_results)}")
+    print(f"Correct: {correct_count}")
+    print(f"Wrong: {wrong_count}")
+    if missing_count:
+        print(f"Missing current data: {missing_count}")
+    print(f"Accuracy: {accuracy:.0f}%")
+
     for evaluation in evaluation_results:
         if evaluation["status"] == "missing_current_data":
             print(f"{evaluation['stock']} → {evaluation['signal']} → MISSING DATA")
@@ -208,8 +227,6 @@ def print_yesterday_performance(previous_predictions, current_data) -> None:
         outcome = "CORRECT" if evaluation["correct"] else "WRONG"
         print(f"{evaluation['stock']} → {evaluation['signal']} → {outcome}")
         print(f"   {evaluation['old_price']:g} → {evaluation['new_price']:g}\n")
-
-    print(f"Accuracy: {accuracy:.0f}%")
 
 
 def print_backtest_summary(historical_data) -> None:
@@ -271,25 +288,27 @@ def _format_pct(value: float) -> str:
     return f"{value:+.1f}%"
 
 def build_telegram_message(top_stocks: list[dict]) -> str:
-
-    lines = []
-
-    lines.append("🔥 <b>Top Opportunities</b>\n")
+    lines = [
+        "🔥 <b>Top Opportunities</b>",
+        "<b># | Stock | Signal | Return</b>",
+    ]
 
     for i, r in enumerate(top_stocks, start=1):
-        rsi = round(r["rsi"], 2) if pd.notna(r["rsi"]) else "N/A"
+        stock = str(r["stock"]).upper()
+        stock_link = f"https://stocks.sabaralogic.com/stock.html?symbol={stock}"
+        signal = html.escape(str(r["signal"]))
+        stock_label = html.escape(stock)
+        expected_annualized = r.get("expected_xirr")
+        expected_annualized_text = (
+            f"{expected_annualized:.2f}%"
+            if pd.notna(expected_annualized)
+            else "N/A"
+        )
 
-        lines.append(f"<b>{i}. {r['stock']}</b>")
-        lines.append(f"Signal : {r['signal']}")
-        lines.append(f"Score  : {r['score']}")
-        lines.append(f"RSI    : {rsi}\n")
-
-        lines.append("<b>Reasons</b>")
-
-        for reason in r["reasons"]:
-            lines.append(f"• {reason}")
-
-        lines.append("\n━━━━━━━━━━━━━━\n")
+        lines.append(
+            f"{i} | <a href=\"{stock_link}\">{stock_label}</a> | "
+            f"{signal} | {expected_annualized_text}"
+        )
 
     return "\n".join(lines)
 
