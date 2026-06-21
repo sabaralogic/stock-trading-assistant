@@ -22,6 +22,7 @@ from src.stock_analysis import (
 )
 from src.strategy import rank_stocks
 from src.site_export import export_analyze_response, export_meta, export_scan_response
+from src.heuristic_history import load_stock_heuristic_history, save_heuristic_snapshots
 
 from src.telegram_alert import send_telegram_message
 from src.telegram_alert import send_telegram_photo
@@ -364,6 +365,7 @@ def build_analyze_api_response(
         "chart_turning_points": json_safe(analysis.get("chart_turning_points", analysis["all_turning_points"])),
         "predicted_turning_point": json_safe(analysis["predicted_turning_point"]),
         "predicted_turning_points": json_safe(analysis.get("predicted_turning_points", [])),
+        "heuristic_history": json_safe(load_stock_heuristic_history(symbol)),
         "recent_data": json_safe(analysis["recent_data"].reset_index().to_dict(orient="records")),
         "formatted_text": format_stock_analysis(analysis),
     }
@@ -382,6 +384,7 @@ def precompute_api_caches(
     top_stocks: list[dict],
     previous_predictions: pd.DataFrame,
     saved_predictions: pd.DataFrame | None,
+    analyses_by_symbol: dict[str, dict],
 ) -> None:
     scan_payload = {
         "symbols": symbols,
@@ -414,15 +417,9 @@ def precompute_api_caches(
     }
 
     cached_analyze_count = 0
-    for symbol, data in sorted(fetched_data.items()):
-        if data is None or data.empty:
+    for symbol, analysis in sorted(analyses_by_symbol.items()):
+        if not analysis:
             continue
-
-        analysis = analyze_stock(
-            data,
-            symbol,
-            turning_point_threshold_pct=args.turning_point_threshold,
-        )
         analyze_response = build_analyze_api_response(analysis, symbol, save_report=False)
         write_cached_response("analyze", analyze_cache_key(symbol, analyze_payload), analyze_response)
         export_analyze_response(symbol, analyze_response)
@@ -486,6 +483,7 @@ def main() -> None:
     print(f"Fetched data for {len(result)} symbols.")
 
     results = []
+    analyses_by_symbol: dict[str, dict] = {}
 
     # for symbol, data in sorted(result.items()):
     #     print(f"  {symbol}: {len(data)} rows")
@@ -508,6 +506,7 @@ def main() -> None:
             symbol,
             turning_point_threshold_pct=args.turning_point_threshold,
         )
+        analyses_by_symbol[symbol] = analysis
         evaluation = attach_analysis_metrics_to_evaluation(
             analysis["evaluation"],
             analysis,
@@ -523,6 +522,7 @@ def main() -> None:
     # Rank top stocks
     top_stocks = rank_stocks(results, top_n=25)
     saved_predictions = save_predictions(results)
+    save_heuristic_snapshots(analyses_by_symbol)
     precompute_api_caches(
         args,
         symbols,
@@ -531,6 +531,7 @@ def main() -> None:
         top_stocks,
         previous_predictions,
         saved_predictions,
+        analyses_by_symbol,
     )
 
     if not top_stocks:

@@ -5,3 +5,9 @@ data/predictions.csv
 .env
 site/
 scripts/build_site.sh
+data/api_cache/
+webapp/static/data/
+data/heuristic_history.csv
+data/predictions2.csv
+data/results2.csv
+

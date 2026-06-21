@@ -42,6 +42,7 @@ from src.stock_analysis import (
 )
 from src.strategy import rank_stocks
 from src.telegram_alert import send_telegram_message
+from src.heuristic_history import load_stock_heuristic_history, save_heuristic_snapshots
 
 NIFTY500_URL = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
 TOP_STOCKS_PATH = ROOT_DIR / "data" / "top_stocks.json"
@@ -156,6 +157,7 @@ def _run_scan(payload: dict[str, Any]) -> dict[str, Any]:
 
     result = _fetch_data(symbols, payload)
     evaluations: list[dict[str, Any]] = []
+    analyses_by_symbol: dict[str, dict[str, Any]] = {}
 
     for symbol, data in sorted(result.items()):
         if data is None or data.empty:
@@ -166,6 +168,7 @@ def _run_scan(payload: dict[str, Any]) -> dict[str, Any]:
             symbol,
             turning_point_threshold_pct=float(payload.get("turning_point_threshold", 0.5)),
         )
+        analyses_by_symbol[symbol] = analysis
         evaluations.append(
             attach_analysis_metrics_to_evaluation(
                 analysis["evaluation"],
@@ -177,6 +180,7 @@ def _run_scan(payload: dict[str, Any]) -> dict[str, Any]:
     top_n = int(payload.get("top_n", 25))
     top_stocks = rank_stocks(evaluations, top_n=top_n)
     saved_predictions = save_predictions(evaluations)
+    save_heuristic_snapshots(analyses_by_symbol)
 
     response = {
         "mode": "scan",
@@ -297,6 +301,7 @@ def _run_analysis(symbol: str, payload: dict[str, Any]) -> dict[str, Any]:
         "chart_turning_points": json_safe(analysis.get("chart_turning_points", analysis["all_turning_points"])),
         "predicted_turning_point": json_safe(analysis["predicted_turning_point"]),
         "predicted_turning_points": json_safe(analysis.get("predicted_turning_points", [])),
+        "heuristic_history": json_safe(load_stock_heuristic_history(normalized_symbol)),
         "recent_data": _frame_to_records(analysis["recent_data"]),
         "formatted_text": format_stock_analysis(analysis),
     }

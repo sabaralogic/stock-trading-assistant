@@ -275,6 +275,8 @@ tr:nth-child(even) {
 .recent-data-table th,
 .recent-data-table td,
 .heuristic-data-table th,
-.heuristic-data-table td {
+.heuristic-data-table td,
+.heuristic-history-table th,
+.heuristic-history-table td {
     font-size: 13px;
 }

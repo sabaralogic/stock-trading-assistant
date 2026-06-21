@@ -72,6 +72,7 @@ async function loadAnalysis() {
 
     renderRecentDataTable(data.recent_data || []);
     renderHeuristicDataTable(data.predicted_turning_points || []);
+    renderHeuristicHistoryTable(data.heuristic_history || []);
 }
 
 function renderExpectedReturnInfo(summary) {
@@ -249,6 +250,77 @@ function renderHeuristicDataTable(rows) {
                     <th>Type</th>
                     <th>Price</th>
                     <th>Swing</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${bodyHtml}
+            </tbody>
+        </table>
+    `;
+}
+
+function renderHeuristicHistoryTable(rows) {
+
+    const container =
+        document.getElementById("heuristicHistory");
+
+    if (!container) {
+        return;
+    }
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+        container.innerHTML =
+            '<div class="chart-empty">No heuristic history available yet.</div>';
+        return;
+    }
+
+    const bodyHtml =
+        rows.map(row => {
+            const snapshotDate =
+                row.snapshot_date
+                    ? formatFullDate(new Date(row.snapshot_date))
+                    : "N/A";
+            const close =
+                formatNumber(row.close);
+            const entryDate =
+                row.expected_entry_date
+                    ? formatFullDate(new Date(row.expected_entry_date))
+                    : "N/A";
+            const entryPrice =
+                formatNumber(row.expected_entry_price);
+            const peakDate =
+                row.expected_peak_date
+                    ? formatFullDate(new Date(row.expected_peak_date))
+                    : "N/A";
+            const peakPrice =
+                formatNumber(row.expected_peak_price);
+            const expectedReturn =
+                formatPercent(row.expected_xirr);
+
+            return `
+                <tr>
+                    <td>${escapeHtml(String(snapshotDate))}</td>
+                    <td>${escapeHtml(String(close))}</td>
+                    <td>${escapeHtml(String(entryDate))}</td>
+                    <td>${escapeHtml(String(entryPrice))}</td>
+                    <td>${escapeHtml(String(peakDate))}</td>
+                    <td>${escapeHtml(String(peakPrice))}</td>
+                    <td>${escapeHtml(String(expectedReturn))}</td>
+                </tr>
+            `;
+        }).join("");
+
+    container.innerHTML = `
+        <table class="heuristic-history-table">
+            <thead>
+                <tr>
+                    <th>Snapshot</th>
+                    <th>Close</th>
+                    <th>Expected Buy Date</th>
+                    <th>Expected Buy Price</th>
+                    <th>Expected Sell Date</th>
+                    <th>Expected Sell Price</th>
+                    <th>Return</th>
                 </tr>
             </thead>
             <tbody>
