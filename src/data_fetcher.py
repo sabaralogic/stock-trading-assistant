@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 def fetch_stock_data(
     symbol: str,
     *,
-    period: str = "1y",
+    period: str = "10y",
     interval: str = "1d",
     start: Optional[str] = None,
     end: Optional[str] = None,
@@ -49,7 +49,7 @@ def fetch_stock_data(
 def fetch_batch_stock_data(
     symbols: Iterable[str],
     *,
-    period: str = "1y",
+    period: str = "10y",
     interval: str = "1d",
     start: Optional[str] = None,
     end: Optional[str] = None,

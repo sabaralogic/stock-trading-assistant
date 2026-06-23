@@ -12,6 +12,14 @@ from src.strategy import evaluate_stock
 
 ANALYSIS_COLUMNS = ["Open", "High", "Low", "Close", "Volume", "RSI", "MA50", "MA200"]
 DEFAULT_TURNING_POINT_THRESHOLD_PCT = 10.0
+DEFAULT_HEURISTIC_FORECAST_DAYS = 30
+HEURISTIC_REFINEMENT_WINDOWS: list[tuple[str, pd.Timedelta, float]] = [
+    ("1m", pd.Timedelta(days=31), 5.0),
+    ("3m", pd.Timedelta(days=92), 4.0),
+    ("6m", pd.Timedelta(days=183), 3.0),
+    ("1y", pd.Timedelta(days=365), 2.0),
+    ("5y", pd.Timedelta(days=365 * 5), 1.0),
+]
 
 
 def analyze_stock(
@@ -68,10 +76,16 @@ def analyze_stock(
         min_swing_pct=turning_point_threshold_pct,
     )
     predicted_turning_points = predict_next_turning_points(
-        raw_turning_points,
+        enriched["Close"],
         latest_available_date=enriched.index.max(),
         latest_available_price=close,
-        count=10,
+        count=DEFAULT_HEURISTIC_FORECAST_DAYS,
+    )
+    heuristic_stages = predict_refined_heuristic_stages(
+        enriched["Close"],
+        latest_available_date=enriched.index.max(),
+        latest_available_price=close,
+        count=DEFAULT_HEURISTIC_FORECAST_DAYS,
     )
     predicted_turning_point = predicted_turning_points[0] if predicted_turning_points else None
     expected_gain = compute_expected_gain_metric(
@@ -89,6 +103,7 @@ def analyze_stock(
         "turning_points": turning_points,
         "predicted_turning_point": predicted_turning_point,
         "predicted_turning_points": predicted_turning_points,
+        "heuristic_stages": heuristic_stages,
         "evaluation": evaluation,
         "summary": {
             "close": close,
@@ -140,57 +155,15 @@ def compute_expected_gain_metric(
         }
 
     latest_date = pd.Timestamp(latest_actual_date).normalize()
-    target_low = None
-    target_peak = None
-    best_gain_pct = None
-
-    future_lows = []
-    future_peaks = []
-
+    future_points = []
     for point in predicted_turning_points:
         point_date = pd.Timestamp(point.get("date")).normalize()
         point_price = _get_float(point.get("price"))
-
         if pd.isna(point_price) or point_date <= latest_date:
             continue
+        future_points.append({"date": point_date, "price": point_price})
 
-        normalized_point = {
-            "date": point_date,
-            "price": point_price,
-        }
-
-        if point.get("type") == "Low":
-            future_lows.append(normalized_point)
-        elif point.get("type") == "Peak":
-            future_peaks.append(normalized_point)
-
-    for low_point in future_lows:
-        for peak_point in future_peaks:
-            if peak_point["date"] <= low_point["date"]:
-                continue
-
-            if close < low_point["price"]:
-                entry_price = close
-                entry_date = latest_date
-            else:
-                entry_price = low_point["price"]
-                entry_date = low_point["date"]
-
-            days_to_peak = int((peak_point["date"] - entry_date).days)
-            if days_to_peak <= 0:
-                continue
-
-            gain_pct = (
-                ((peak_point["price"] - entry_price) / entry_price)
-                * 100
-            )
-
-            if best_gain_pct is None or gain_pct > best_gain_pct:
-                best_gain_pct = gain_pct
-                target_low = low_point
-                target_peak = peak_point
-
-    if target_low is None or target_peak is None:
+    if not future_points:
         return {
             "annualized_gain": None,
             "entry_price": None,
@@ -200,6 +173,54 @@ def compute_expected_gain_metric(
             "peak_price": None,
             "peak_date": None,
             "days_to_peak": None,
+        }
+
+    target_low = None
+    target_peak = None
+    best_gain_pct = None
+
+    for low_index, low_point in enumerate(future_points):
+        for peak_point in future_points[low_index + 1 :]:
+            if peak_point["date"] <= low_point["date"]:
+                continue
+
+            entry_price = min(close, low_point["price"])
+            entry_date = latest_date if close < low_point["price"] else low_point["date"]
+            days_to_peak = int((peak_point["date"] - entry_date).days)
+            if days_to_peak <= 0:
+                continue
+
+            gain_pct = ((peak_point["price"] - entry_price) / entry_price) * 100
+            if best_gain_pct is None or gain_pct > best_gain_pct:
+                best_gain_pct = gain_pct
+                target_low = low_point
+                target_peak = peak_point
+
+    if target_low is None or target_peak is None:
+        target_peak = max(future_points, key=lambda point: (point["price"], point["date"]))
+        entry_price = close
+        entry_date = latest_date
+        days_to_peak = int((target_peak["date"] - entry_date).days)
+        if days_to_peak <= 0 or target_peak["price"] <= entry_price:
+            return {
+                "annualized_gain": None,
+                "entry_price": None,
+                "entry_date": None,
+                "low_price": None,
+                "low_date": None,
+                "peak_price": None,
+                "peak_date": None,
+                "days_to_peak": None,
+            }
+        return {
+            "annualized_gain": (((target_peak["price"] - entry_price) / entry_price) / days_to_peak) * 365 * 100,
+            "entry_price": entry_price,
+            "entry_date": entry_date,
+            "low_price": entry_price,
+            "low_date": entry_date,
+            "peak_price": target_peak["price"],
+            "peak_date": target_peak["date"],
+            "days_to_peak": days_to_peak,
         }
 
     if close < target_low["price"]:
@@ -1002,86 +1023,323 @@ def dedupe_turning_points(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def predict_next_turning_points(
-    turning_points: list[dict[str, Any]],
+    close_series: pd.Series,
     latest_available_date: Any | None = None,
     latest_available_price: Any | None = None,
     count: int = 2,
 ) -> list[dict[str, Any]]:
-    if len(turning_points) < 2:
+    heuristic_stages = predict_refined_heuristic_stages(
+        close_series,
+        latest_available_date=latest_available_date,
+        latest_available_price=latest_available_price,
+        count=count,
+    )
+    if heuristic_stages:
+        return heuristic_stages[-1]["points"]
+
+    return []
+
+
+def predict_refined_heuristic_stages(
+    close_series: pd.Series,
+    latest_available_date: Any | None = None,
+    latest_available_price: Any | None = None,
+    count: int = 2,
+) -> list[dict[str, Any]]:
+    normalized_series = _normalize_close_series(close_series)
+    if len(normalized_series) < 2:
         return []
 
-    last_point = turning_points[-1]
-    last_type = str(last_point.get("type", ""))
-    last_date = pd.to_datetime(last_point.get("date"), errors="coerce")
-    last_price = _get_float(last_point.get("price"))
-    if pd.isna(last_date) or pd.isna(last_price):
-        return None
+    heuristic_stages: list[dict[str, Any]] = []
+    active_stage_forecasts: list[dict[str, Any]] = []
 
-    latest_known_date = pd.to_datetime(latest_available_date, errors="coerce")
-    latest_known_price = _get_float(latest_available_price)
-    fallback_first = turning_points[-2]
-    fallback_first_price = _get_float(fallback_first.get("price"))
-    fallback_first_date = pd.to_datetime(fallback_first.get("date"), errors="coerce")
-    if pd.isna(fallback_first_price) or fallback_first_price == 0 or pd.isna(fallback_first_date):
-        return []
+    for window_name, window_delta, stage_weight in HEURISTIC_REFINEMENT_WINDOWS:
+        cutoff_date = normalized_series.index[-1] - window_delta
+        window_series = normalized_series[normalized_series.index >= cutoff_date]
+        minimum_window_points = 10
+        if len(window_series) < minimum_window_points:
+            continue
 
-    fallback_swing_pct = abs((last_price - fallback_first_price) / fallback_first_price) * 100
-    fallback_days = _business_days_between(fallback_first_date, last_date)
+        stage_points = _forecast_window_pattern(
+            full_series=normalized_series,
+            current_window_series=window_series,
+            count=count,
+        )
+        if not stage_points:
+            continue
 
-    def _transition_sequences() -> dict[tuple[str, str], list[tuple[float, int]]]:
-        sequences: dict[tuple[str, str], list[tuple[float, int]]] = {}
-        for first, second in zip(turning_points, turning_points[1:]):
-            first_type = str(first.get("type", ""))
-            second_type = str(second.get("type", ""))
+        active_stage_forecasts.append(
+            {
+                "label": window_name,
+                "weight": stage_weight,
+                "points": stage_points,
+            }
+        )
 
-            first_price = _get_float(first.get("price"))
-            second_price = _get_float(second.get("price"))
-            first_date = pd.to_datetime(first.get("date"), errors="coerce")
-            second_date = pd.to_datetime(second.get("date"), errors="coerce")
-            if (
-                pd.isna(first_price)
-                or pd.isna(second_price)
-                or first_price == 0
-                or pd.isna(first_date)
-                or pd.isna(second_date)
-            ):
-                continue
-
-            transition_key = (first_type, second_type)
-            sequences.setdefault(transition_key, []).append(
-                (
-                    abs((second_price - first_price) / first_price) * 100,
-                    _business_days_between(first_date, second_date),
-                )
+        blended_points = _blend_projection_paths(
+            active_stage_forecasts,
+            count=count,
+        )
+        if blended_points:
+            heuristic_stages.append(
+                {
+                    "label": " + ".join(stage["label"] for stage in active_stage_forecasts),
+                    "points": blended_points,
+                }
             )
 
-        for transition_key, values in sequences.items():
-            sequences[transition_key] = list(reversed(values))
+    return heuristic_stages
 
-        return sequences
 
-    transition_sequences = _transition_sequences()
+def _normalize_close_series(close_series: pd.Series) -> pd.Series:
+    if close_series is None:
+        return pd.Series(dtype=float)
+
+    normalized = pd.Series(close_series).dropna().copy()
+    if normalized.empty:
+        return normalized.astype(float)
+
+    normalized.index = pd.to_datetime(normalized.index, errors="coerce")
+    normalized = normalized[~normalized.index.isna()]
+    normalized = normalized.sort_index()
+    return normalized.astype(float)
+
+
+def _forecast_window_pattern(
+    *,
+    full_series: pd.Series,
+    current_window_series: pd.Series,
+    count: int,
+) -> list[dict[str, Any]]:
+    if len(full_series) < 2 or len(current_window_series) < 2 or count <= 0:
+        return []
+
+    values = full_series.to_numpy(dtype=float)
+    current_values = current_window_series.to_numpy(dtype=float)
+    current_length = len(current_values)
+    current_end_index = len(values) - 1
+    current_start_index = current_end_index - current_length + 1
+    current_date = current_window_series.index[-1]
+    current_price = _get_float(current_window_series.iloc[-1])
+    current_normalized = current_values / current_values[0]
+    current_returns = (current_values[1:] / current_values[:-1]) - 1
+
+    candidates: list[dict[str, Any]] = []
+    max_candidate_start = current_start_index - count
+    if max_candidate_start <= 0:
+        return []
+
+    for candidate_start in range(0, max_candidate_start):
+        candidate_end = candidate_start + current_length - 1
+        future_end = candidate_end + count
+        if future_end >= len(values):
+            break
+
+        candidate_values = values[candidate_start : candidate_start + current_length]
+        if candidate_values[0] <= 0 or candidate_values[-1] <= 0:
+            continue
+
+        candidate_normalized = candidate_values / candidate_values[0]
+        candidate_returns = (candidate_values[1:] / candidate_values[:-1]) - 1
+
+        shape_error = ((candidate_normalized - current_normalized) ** 2).mean()
+        returns_error = ((candidate_returns - current_returns) ** 2).mean() if len(current_returns) else 0.0
+        total_error = float(shape_error + (returns_error * 4))
+
+        future_values = values[candidate_end + 1 : candidate_end + 1 + count]
+        future_ratios = future_values / candidate_values[-1]
+        recency_bias = 1 + (candidate_start / max(current_start_index, 1))
+        candidates.append(
+            {
+                "error": total_error,
+                "score": 1 / max(total_error, 1e-9) * recency_bias,
+                "ratios": future_ratios,
+            }
+        )
+
+    if not candidates:
+        return []
+
+    best_candidates = sorted(candidates, key=lambda item: item["error"])[: min(7, len(candidates))]
+    total_score = sum(candidate["score"] for candidate in best_candidates)
+    if total_score <= 0:
+        return []
+
+    projected_points: list[dict[str, Any]] = []
+    previous_price = current_price
+    for day_offset in range(1, count + 1):
+        projected_date = _add_business_days(current_date, day_offset)
+        blended_ratio = sum(
+            candidate["ratios"][day_offset - 1] * candidate["score"]
+            for candidate in best_candidates
+        ) / total_score
+        projected_price = current_price * blended_ratio
+        swing_pct = 0.0 if previous_price == 0 else ((projected_price - previous_price) / previous_price) * 100
+        projected_points.append(
+            {
+                "type": "Projected",
+                "date": _format_date(projected_date),
+                "price": projected_price,
+                "projected_swing_pct": swing_pct,
+            }
+        )
+        previous_price = projected_price
+
+    return projected_points
+
+
+def _blend_projection_paths(
+    stage_forecasts: list[dict[str, Any]],
+    *,
+    count: int,
+) -> list[dict[str, Any]]:
+    if not stage_forecasts:
+        return []
+
+    blended_points: list[dict[str, Any]] = []
+    previous_price: float | None = None
+    for point_index in range(count):
+        available_stages = [
+            stage
+            for stage in stage_forecasts
+            if len(stage["points"]) > point_index
+        ]
+        if not available_stages:
+            break
+
+        reference_point = available_stages[0]["points"][point_index]
+        total_weight = sum(stage["weight"] for stage in available_stages)
+        if total_weight <= 0:
+            continue
+
+        blended_price = sum(
+            stage["points"][point_index]["price"] * stage["weight"]
+            for stage in available_stages
+        ) / total_weight
+        swing_pct = 0.0 if previous_price in (None, 0) else ((blended_price - previous_price) / previous_price) * 100
+        blended_points.append(
+            {
+                "type": "Projected",
+                "date": reference_point["date"],
+                "price": blended_price,
+                "projected_swing_pct": swing_pct,
+            }
+        )
+        previous_price = blended_price
+
+    return blended_points
+
+
+def predict_next_turning_point(
+    close_series: pd.Series,
+    latest_available_date: Any | None = None,
+    latest_available_price: Any | None = None,
+) -> dict[str, Any] | None:
+    projected_turning_points = predict_next_turning_points(
+        close_series,
+        latest_available_date=latest_available_date,
+        latest_available_price=latest_available_price,
+        count=1,
+    )
+    if not projected_turning_points:
+        return None
+
+    return projected_turning_points[0]
+
+
+def _transition_sequences(points: list[dict[str, Any]]) -> dict[tuple[str, str], list[tuple[float, int]]]:
+    sequences: dict[tuple[str, str], list[tuple[float, int]]] = {}
+    for first, second in zip(points, points[1:]):
+        first_type = str(first.get("type", ""))
+        second_type = str(second.get("type", ""))
+
+        first_price = _get_float(first.get("price"))
+        second_price = _get_float(second.get("price"))
+        first_date = pd.to_datetime(first.get("date"), errors="coerce")
+        second_date = pd.to_datetime(second.get("date"), errors="coerce")
+        if (
+            pd.isna(first_price)
+            or pd.isna(second_price)
+            or first_price == 0
+            or pd.isna(first_date)
+            or pd.isna(second_date)
+        ):
+            continue
+
+        transition_key = (first_type, second_type)
+        sequences.setdefault(transition_key, []).append(
+            (
+                abs((second_price - first_price) / first_price) * 100,
+                _business_days_between(first_date, second_date),
+            )
+        )
+
+    for transition_key, values in sequences.items():
+        sequences[transition_key] = list(reversed(values))
+
+    return sequences
+
+
+def _sequence_stat(sequence: list[tuple[float, int]], occurrence_index: int) -> tuple[float, int] | None:
+    if not sequence:
+        return None
+
+    if occurrence_index < len(sequence):
+        swing_pct, days = sequence[occurrence_index]
+        return swing_pct, max(int(days), 1)
+
+    recent_window = sequence[: min(3, len(sequence))]
+    avg_swing = sum(item[0] for item in recent_window) / len(recent_window)
+    avg_days = max(
+        int(round(sum(item[1] for item in recent_window) / len(recent_window))),
+        1,
+    )
+    return avg_swing, avg_days
+
+
+def _project_turning_points_from_sequences(
+    *,
+    base_sequences: dict[tuple[str, str], list[tuple[float, int]]],
+    refinement_sequences: list[tuple[float, dict[tuple[str, str], list[tuple[float, int]]]]],
+    fallback_swing_pct: float,
+    fallback_days: int,
+    last_type: str,
+    last_date: pd.Timestamp,
+    last_price: float,
+    latest_known_date: Any | None,
+    latest_known_price: Any | None,
+    count: int,
+    fallback_sequences: dict[tuple[str, str], list[tuple[float, int]]] | None = None,
+) -> list[dict[str, Any]]:
     transition_usage: dict[tuple[str, str], int] = {}
 
     def _transition_stats(from_type: str, to_type: str) -> tuple[float, int]:
         transition_key = (from_type, to_type)
-        sequence = transition_sequences.get(transition_key, [])
+        occurrence_index = transition_usage.get(transition_key, 0)
 
-        if sequence:
-            occurrence_index = transition_usage.get(transition_key, 0)
-            if occurrence_index < len(sequence):
-                result = sequence[occurrence_index]
-            else:
-                recent_window = sequence[: min(3, len(sequence))]
-                avg_swing = sum(item[0] for item in recent_window) / len(recent_window)
-                avg_days = max(
-                    int(round(sum(item[1] for item in recent_window) / len(recent_window))),
-                    1,
-                )
-                result = (avg_swing, avg_days)
+        refined_stat = _sequence_stat(base_sequences.get(transition_key, []), occurrence_index)
+        if refined_stat is None and fallback_sequences is not None:
+            refined_stat = _sequence_stat(fallback_sequences.get(transition_key, []), occurrence_index)
 
-            transition_usage[transition_key] = occurrence_index + 1
-            return result
+        for blend_weight, sequences in refinement_sequences:
+            window_stat = _sequence_stat(sequences.get(transition_key, []), occurrence_index)
+            if window_stat is None:
+                continue
+
+            if refined_stat is None:
+                refined_stat = window_stat
+                continue
+
+            refined_swing = (refined_stat[0] * (1 - blend_weight)) + (window_stat[0] * blend_weight)
+            refined_days = max(
+                int(round((refined_stat[1] * (1 - blend_weight)) + (window_stat[1] * blend_weight))),
+                1,
+            )
+            refined_stat = (refined_swing, refined_days)
+
+        transition_usage[transition_key] = occurrence_index + 1
+        if refined_stat is not None:
+            return refined_stat
 
         return fallback_swing_pct, fallback_days
 
@@ -1126,24 +1384,4 @@ def predict_next_turning_points(
         current_date = projected_date
         current_price = projected_price
 
-    if not projected_turning_points:
-        return []
-
     return projected_turning_points
-
-
-def predict_next_turning_point(
-    turning_points: list[dict[str, Any]],
-    latest_available_date: Any | None = None,
-    latest_available_price: Any | None = None,
-) -> dict[str, Any] | None:
-    projected_turning_points = predict_next_turning_points(
-        turning_points,
-        latest_available_date=latest_available_date,
-        latest_available_price=latest_available_price,
-        count=1,
-    )
-    if not projected_turning_points:
-        return None
-
-    return projected_turning_points[0]

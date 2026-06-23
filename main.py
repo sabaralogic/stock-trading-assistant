@@ -110,7 +110,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Optional text file containing ticker symbols separated by commas, spaces, or new lines.",
     )
-    parser.add_argument("--period", default="1y", help="yfinance period, for example 1mo, 6mo, 1y, 5y.")
+    parser.add_argument("--period", default="10y", help="yfinance period, for example 1mo, 6mo, 1y, 5y, 10y.")
     parser.add_argument("--interval", default="1d", help="yfinance interval, for example 1d, 1h, 5m.")
     parser.add_argument("--start", help="Start date in YYYY-MM-DD format. Overrides --period when provided.")
     parser.add_argument("--end", help="End date in YYYY-MM-DD format.")
@@ -365,6 +365,7 @@ def build_analyze_api_response(
         "chart_turning_points": json_safe(analysis.get("chart_turning_points", analysis["all_turning_points"])),
         "predicted_turning_point": json_safe(analysis["predicted_turning_point"]),
         "predicted_turning_points": json_safe(analysis.get("predicted_turning_points", [])),
+        "heuristic_stages": json_safe(analysis.get("heuristic_stages", [])),
         "heuristic_history": json_safe(load_stock_heuristic_history(symbol)),
         "recent_data": json_safe(analysis["recent_data"].reset_index().to_dict(orient="records")),
         "formatted_text": format_stock_analysis(analysis),

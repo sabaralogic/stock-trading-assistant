@@ -101,7 +101,7 @@ def _fetch_data(symbols: list[str], payload: dict[str, Any], *, max_workers: int
     return fetch_batch_stock_data(
         symbols,
         max_workers=workers,
-        period=payload.get("period", "1y"),
+        period=payload.get("period", "10y"),
         interval=payload.get("interval", "1d"),
         start=payload.get("start"),
         end=payload.get("end"),
@@ -273,7 +273,7 @@ def _run_analysis(symbol: str, payload: dict[str, Any]) -> dict[str, Any]:
     result = fetch_batch_stock_data(
         [normalized_symbol],
         max_workers=1,
-        period=payload.get("period", "1y"),
+        period=payload.get("period", "10y"),
         interval=payload.get("interval", "1d"),
         start=payload.get("start"),
         end=payload.get("end"),
@@ -301,6 +301,7 @@ def _run_analysis(symbol: str, payload: dict[str, Any]) -> dict[str, Any]:
         "chart_turning_points": json_safe(analysis.get("chart_turning_points", analysis["all_turning_points"])),
         "predicted_turning_point": json_safe(analysis["predicted_turning_point"]),
         "predicted_turning_points": json_safe(analysis.get("predicted_turning_points", [])),
+        "heuristic_stages": json_safe(analysis.get("heuristic_stages", [])),
         "heuristic_history": json_safe(load_stock_heuristic_history(normalized_symbol)),
         "recent_data": _frame_to_records(analysis["recent_data"]),
         "formatted_text": format_stock_analysis(analysis),

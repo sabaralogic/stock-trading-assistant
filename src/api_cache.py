@@ -97,7 +97,7 @@ def scan_cache_key(payload: dict[str, Any], resolved_symbols: list[str] | None =
 
     return {
         "symbols": normalized_symbols,
-        "period": payload.get("period", "1y"),
+        "period": payload.get("period", "10y"),
         "interval": payload.get("interval", "1d"),
         "start": payload.get("start"),
         "end": payload.get("end"),
@@ -110,7 +110,7 @@ def analyze_cache_key(symbol: str, payload: dict[str, Any]) -> dict[str, Any]:
     normalized_symbol = normalize_symbols([symbol])
     return {
         "symbol": normalized_symbol[0] if normalized_symbol else symbol,
-        "period": payload.get("period", "1y"),
+        "period": payload.get("period", "10y"),
         "interval": payload.get("interval", "1d"),
         "start": payload.get("start"),
         "end": payload.get("end"),

@@ -56,7 +56,8 @@ async function loadAnalysis() {
 
     renderTurningPointChart(
         data.chart_turning_points || data.all_turning_points || [],
-        data.predicted_turning_points || []
+        data.predicted_turning_points || [],
+        data.heuristic_stages || []
     );
 
     const insights =
@@ -136,14 +137,14 @@ function renderExpectedReturnInfo(summary) {
             <h2>Expected Annualized Return - with heuristics</h2>
             <p class="metric-value">${formatPercent(expectedReturn)}</p>
             <p class="metric-note">
-                Based on the selected heuristic low on ${escapeHtml(lowDate)} and the selected following heuristic peak on ${escapeHtml(peakDate)}.
+                Based on the selected projected entry on ${escapeHtml(lowDate)} and the selected later projected exit on ${escapeHtml(peakDate)}.
             </p>
             <p class="metric-note">
-                Effective Entry: ${escapeHtml(formatNumber(expectedEntryPrice))} on ${escapeHtml(entryDate)}${usesCurrentClose ? " (current close used because it is lower than the heuristic low)" : ""} |
+                Effective Entry: ${escapeHtml(formatNumber(expectedEntryPrice))} on ${escapeHtml(entryDate)}${usesCurrentClose ? " (current close used because it is lower than the selected projected entry)" : ""} |
             </p>
             <p class="metric-note">
-                Heuristic Low: ${escapeHtml(formatNumber(expectedLowPrice))} |
-                Heuristic High: ${escapeHtml(formatNumber(expectedPeakPrice))} |
+                Selected Entry: ${escapeHtml(formatNumber(expectedLowPrice))} |
+                Selected Exit: ${escapeHtml(formatNumber(expectedPeakPrice))} |
                 Days: ${escapeHtml(String(daysToPeak))}
             </p>
             <pre class="metric-formula">${escapeHtml(calculationText)}</pre>
@@ -330,7 +331,7 @@ function renderHeuristicHistoryTable(rows) {
     `;
 }
 
-function renderTurningPointChart(turningPoints, predictedTurningPoints) {
+function renderTurningPointChart(turningPoints, predictedTurningPoints, heuristicStages) {
 
     const container =
         document.getElementById("turningPointChart");
@@ -341,19 +342,34 @@ function renderTurningPointChart(turningPoints, predictedTurningPoints) {
             .map(point => toChartPoint(point, false))
             .filter(Boolean);
 
+    const displayedActualPoints =
+        limitChartPointsToLastYear(actualPoints);
+
     const projectedPoints =
         (predictedTurningPoints || [])
             .map(point => toChartPoint(point, true))
             .filter(Boolean);
 
-    if (actualPoints.length < 2) {
+    const normalizedStages =
+        normalizeHeuristicStages(heuristicStages, projectedPoints);
+    const finalStage =
+        normalizedStages.length > 0
+            ? normalizedStages[normalizedStages.length - 1]
+            : null;
+    const intermediateStages =
+        normalizedStages.length > 1
+            ? normalizedStages.slice(0, -1)
+            : [];
+    const finalStageLabel =
+        finalStage
+            ? finalStage.label
+            : "Final";
+
+    if (displayedActualPoints.length < 2) {
         container.innerHTML =
             '<div class="chart-empty">Not enough turning points to draw a chart.</div>';
         return;
     }
-
-    const allPoints =
-        [...actualPoints, ...projectedPoints];
 
     const width = 980;
     const height = 420;
@@ -363,48 +379,87 @@ function renderTurningPointChart(turningPoints, predictedTurningPoints) {
     const marginBottom = 48;
     const innerWidth = width - marginLeft - marginRight;
     const innerHeight = height - marginTop - marginBottom;
+    let selectedStageIndex = -1;
 
-    const minPrice =
-        Math.min(...allPoints.map(point => point.price));
-    const maxPrice =
-        Math.max(...allPoints.map(point => point.price));
-    const safeMinPrice =
-        minPrice === maxPrice ? minPrice - 1 : minPrice;
-    const safeMaxPrice =
-        minPrice === maxPrice ? maxPrice + 1 : maxPrice;
+    function renderChartFrame() {
+        const selectedStage =
+            selectedStageIndex >= 0
+                ? intermediateStages[selectedStageIndex]
+                : null;
+        const visibleProjectedStages =
+            [selectedStage, finalStage].filter(Boolean);
+        const allPoints =
+            [
+                ...displayedActualPoints,
+                ...visibleProjectedStages.flatMap(stage => stage.points),
+            ];
 
-    const minDate =
-        actualPoints[0].date;
-    const maxDate =
-        allPoints[allPoints.length - 1].date;
-    const totalMs =
-        Math.max(maxDate - minDate, 1);
+        const minPrice =
+            Math.min(...allPoints.map(point => point.price));
+        const maxPrice =
+            Math.max(...allPoints.map(point => point.price));
+        const safeMinPrice =
+            minPrice === maxPrice ? minPrice - 1 : minPrice;
+        const safeMaxPrice =
+            minPrice === maxPrice ? maxPrice + 1 : maxPrice;
 
-    function xPos(date) {
-        const elapsed = date - minDate;
-        return marginLeft + (elapsed / totalMs) * innerWidth;
-    }
+        const minDate =
+            displayedActualPoints[0].date;
+        const maxDate =
+            allPoints[allPoints.length - 1].date;
+        const totalMs =
+            Math.max(maxDate - minDate, 1);
 
-    function yPos(price) {
-        return marginTop +
-            ((safeMaxPrice - price) / (safeMaxPrice - safeMinPrice)) * innerHeight;
-    }
+        function xPos(date) {
+            const elapsed = date - minDate;
+            return marginLeft + (elapsed / totalMs) * innerWidth;
+        }
 
-    const actualPolyline =
-        actualPoints
-            .map(point => `${xPos(point.date).toFixed(2)},${yPos(point.price).toFixed(2)}`)
-            .join(" ");
+        function yPos(price) {
+            return marginTop +
+                ((safeMaxPrice - price) / (safeMaxPrice - safeMinPrice)) * innerHeight;
+        }
 
-    const projectedPolyline =
-        projectedPoints.length > 0
-            ? [actualPoints[actualPoints.length - 1], ...projectedPoints]
+        const actualPolyline =
+            displayedActualPoints
                 .map(point => `${xPos(point.date).toFixed(2)},${yPos(point.price).toFixed(2)}`)
-                .join(" ")
-            : "";
+                .join(" ");
 
-    const actualMarkers =
-        actualPoints.map(point => {
-            return `
+        const intermediatePolyline =
+            selectedStage && selectedStage.points.length > 0
+                ? [displayedActualPoints[displayedActualPoints.length - 1], ...selectedStage.points]
+                    .map(point => `${xPos(point.date).toFixed(2)},${yPos(point.price).toFixed(2)}`)
+                    .join(" ")
+                : "";
+
+        const finalPolyline =
+            finalStage && finalStage.points.length > 0
+                ? [displayedActualPoints[displayedActualPoints.length - 1], ...finalStage.points]
+                    .map(point => `${xPos(point.date).toFixed(2)},${yPos(point.price).toFixed(2)}`)
+                    .join(" ")
+                : "";
+
+        const actualMarkers =
+            displayedActualPoints.map(point => {
+                return `
+                    <circle
+                        class="chart-point"
+                        cx="${xPos(point.date).toFixed(2)}"
+                        cy="${yPos(point.price).toFixed(2)}"
+                        r="8"
+                        fill="transparent"
+                        stroke="none"
+                        data-type="${escapeAttribute(point.type)}"
+                        data-date="${escapeAttribute(formatFullDate(point.date))}"
+                        data-price="${escapeAttribute(formatNumber(point.price))}"
+                        data-swing="${escapeAttribute(formatSwingText(point.swingPct))}"
+                        data-projected="false"
+                    ></circle>
+                `;
+            }).join("");
+
+        const projectedMarkers =
+            (finalStage?.points || projectedPoints).map(point => `
                 <circle
                     class="chart-point"
                     cx="${xPos(point.date).toFixed(2)}"
@@ -416,66 +471,156 @@ function renderTurningPointChart(turningPoints, predictedTurningPoints) {
                     data-date="${escapeAttribute(formatFullDate(point.date))}"
                     data-price="${escapeAttribute(formatNumber(point.price))}"
                     data-swing="${escapeAttribute(formatSwingText(point.swingPct))}"
-                    data-projected="false"
+                    data-projected="true"
                 ></circle>
-            `;
-        }).join("");
+            `).join("");
 
-    const projectedMarkers =
-        projectedPoints.map(point => `
-            <circle
-                class="chart-point"
-                cx="${xPos(point.date).toFixed(2)}"
-                cy="${yPos(point.price).toFixed(2)}"
-                r="8"
-                fill="transparent"
-                stroke="none"
-                data-type="${escapeAttribute(point.type)}"
-                data-date="${escapeAttribute(formatFullDate(point.date))}"
-                data-price="${escapeAttribute(formatNumber(point.price))}"
-                data-swing="${escapeAttribute(formatSwingText(point.swingPct))}"
-                data-projected="true"
-            ></circle>
-        `).join("");
+        const priceLabels =
+            [0, 0.25, 0.5, 0.75, 1].map(fraction => {
+                const price = safeMinPrice + (safeMaxPrice - safeMinPrice) * fraction;
+                const y = yPos(price);
+                return `
+                    <line x1="${marginLeft}" y1="${y.toFixed(2)}" x2="${width - marginRight}" y2="${y.toFixed(2)}" stroke="#e2e8f0" stroke-width="1" />
+                    <text x="10" y="${(y + 4).toFixed(2)}" fill="#64748b" font-size="11">${formatNumber(price)}</text>
+                `;
+            }).join("");
 
-    const priceLabels =
-        [0, 0.25, 0.5, 0.75, 1].map(fraction => {
-            const price = safeMinPrice + (safeMaxPrice - safeMinPrice) * fraction;
-            const y = yPos(price);
-            return `
-                <line x1="${marginLeft}" y1="${y.toFixed(2)}" x2="${width - marginRight}" y2="${y.toFixed(2)}" stroke="#e2e8f0" stroke-width="1" />
-                <text x="10" y="${(y + 4).toFixed(2)}" fill="#64748b" font-size="11">${formatNumber(price)}</text>
-            `;
-        }).join("");
+        const tickDates = buildTickDates(minDate, maxDate, displayedActualPoints, finalStage?.points || projectedPoints);
+        const dateLabels =
+            tickDates.map(date => `
+                <text x="${xPos(date).toFixed(2)}" y="${height - 14}" text-anchor="middle" fill="#64748b" font-size="11">
+                    ${formatShortDate(date)}
+                </text>
+            `).join("");
 
-    const tickDates = buildTickDates(minDate, maxDate, actualPoints, projectedPoints);
-    const dateLabels =
-        tickDates.map(date => `
-            <text x="${xPos(date).toFixed(2)}" y="${height - 14}" text-anchor="middle" fill="#64748b" font-size="11">
-                ${formatShortDate(date)}
-            </text>
-        `).join("");
+        const stageButtons =
+            `
+                <button
+                    type="button"
+                    class="heuristic-stage-button heuristic-stage-button-till-now ${selectedStageIndex === -1 ? "active" : ""}"
+                    data-stage-index="-1"
+                >
+                    ...Till now
+                </button>
+            ` +
+            (intermediateStages.length > 0
+                ? intermediateStages.map((stage, index) => `
+                    <button
+                        type="button"
+                        class="heuristic-stage-button ${index === selectedStageIndex ? "active" : ""}"
+                        data-stage-index="${index}"
+                    >
+                        ${escapeHtml(stage.label)}
+                    </button>
+                `).join("")
+                : '<div class="heuristic-stage-empty">No intermediate heuristic stages available.</div>');
 
-    container.innerHTML = `
-        <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Turning point chart for ${symbol}">
-            <rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff" />
-            <line x1="${marginLeft}" y1="${marginTop}" x2="${marginLeft}" y2="${height - marginBottom}" stroke="#94a3b8" stroke-width="1.5" />
-            <line x1="${marginLeft}" y1="${height - marginBottom}" x2="${width - marginRight}" y2="${height - marginBottom}" stroke="#94a3b8" stroke-width="1.5" />
-            ${priceLabels}
-            <polyline fill="none" stroke="#2563eb" stroke-width="3" points="${actualPolyline}" />
-            ${projectedPolyline ? `<polyline fill="none" stroke="#16a34a" stroke-width="3" stroke-dasharray="8 6" points="${projectedPolyline}" />` : ""}
-            ${actualMarkers}
-            ${projectedMarkers}
-            ${dateLabels}
-        </svg>
-        <div
-            class="chart-tooltip"
-            id="chartTooltip"
-            style="position:absolute; left:-9999px; top:-9999px; display:inline-block; visibility:hidden; width:auto; min-width:0; padding:4px 7px; background:#111827; color:#ffffff; border-radius:3px; border:1px solid #374151; box-shadow:0 6px 16px rgba(15, 23, 42, 0.24); font-size:16px; line-height:1.2; white-space:nowrap; pointer-events:none; z-index:5;"
-        ></div>
-    `;
+        container.innerHTML = `
+            <div class="chart-layout">
+                <div class="chart-plot-area">
+                    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Turning point chart for ${symbol}">
+                        <rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff" />
+                        <line x1="${marginLeft}" y1="${marginTop}" x2="${marginLeft}" y2="${height - marginBottom}" stroke="#94a3b8" stroke-width="1.5" />
+                        <line x1="${marginLeft}" y1="${height - marginBottom}" x2="${width - marginRight}" y2="${height - marginBottom}" stroke="#94a3b8" stroke-width="1.5" />
+                        ${priceLabels}
+                        <polyline fill="none" stroke="#2563eb" stroke-width="3" points="${actualPolyline}" />
+                        ${intermediatePolyline ? `<polyline fill="none" stroke="#111827" stroke-width="2" stroke-dasharray="4 5" stroke-opacity="0.85" points="${intermediatePolyline}" />` : ""}
+                        ${finalPolyline ? `<polyline fill="none" stroke="#16a34a" stroke-width="3" stroke-dasharray="8 6" points="${finalPolyline}" />` : ""}
+                        ${actualMarkers}
+                        ${projectedMarkers}
+                        ${dateLabels}
+                    </svg>
+                    <div
+                        class="chart-tooltip"
+                        id="chartTooltip"
+                        style="position:absolute; left:-9999px; top:-9999px; display:inline-block; visibility:hidden; width:auto; min-width:0; padding:4px 7px; background:#111827; color:#ffffff; border-radius:3px; border:1px solid #374151; box-shadow:0 6px 16px rgba(15, 23, 42, 0.24); font-size:16px; line-height:1.2; white-space:nowrap; pointer-events:none; z-index:5;"
+                    ></div>
+                </div>
+                <div class="heuristic-stage-panel">
+                    <div class="heuristic-stage-heading">Heuristic Stages</div>
+                    <div class="heuristic-stage-note">Final heuristic stays visible in green.</div>
+                    ${finalStage ? `
+                        <div class="heuristic-stage-final-label">
+                            Final: ${escapeHtml(finalStageLabel)}
+                        </div>
+                    ` : ""}
+                    <div class="heuristic-stage-buttons">
+                        ${stageButtons}
+                    </div>
+                </div>
+            </div>
+        `;
 
-    attachChartTooltips(container);
+        container.querySelectorAll(".heuristic-stage-button").forEach(button => {
+            button.addEventListener("click", () => {
+                selectedStageIndex = Number(button.dataset.stageIndex);
+                renderChartFrame();
+            });
+        });
+
+        attachChartTooltips(container);
+    }
+
+    renderChartFrame();
+}
+
+function normalizeHeuristicStages(stages, fallbackProjectedPoints) {
+
+    const normalized =
+        (Array.isArray(stages) ? stages : [])
+            .map((stage, index) => {
+                const points =
+                    (stage.points || [])
+                        .map(point => toChartPoint(point, true))
+                        .filter(Boolean);
+
+                if (!points.length) {
+                    return null;
+                }
+
+                return {
+                    label: stage.label || `Stage ${index + 1}`,
+                    points,
+                };
+            })
+            .filter(Boolean);
+
+    if (normalized.length > 0) {
+        return normalized;
+    }
+
+    if (!Array.isArray(fallbackProjectedPoints) || fallbackProjectedPoints.length === 0) {
+        return [];
+    }
+
+    return [
+        {
+            label: "Final",
+            points: fallbackProjectedPoints,
+        },
+    ];
+}
+
+function limitChartPointsToLastYear(points) {
+
+    if (!Array.isArray(points) || points.length < 2) {
+        return points;
+    }
+
+    const latestDate =
+        points[points.length - 1].date;
+    const oneYearAgo =
+        new Date(latestDate);
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+    const startIndex =
+        points.findIndex(point => point.date >= oneYearAgo);
+
+    if (startIndex <= 0) {
+        return points;
+    }
+
+    return points.slice(startIndex);
 }
 
 function buildTickDates(minDate, maxDate, actualPoints, projectedPoints) {
