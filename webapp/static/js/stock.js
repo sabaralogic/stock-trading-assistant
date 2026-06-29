@@ -6,30 +6,32 @@ const symbol =
     window.location.pathname.split("/").pop();
 
 async function loadAnalysis() {
+    try {
+        const response =
+            await fetch(
+                `/static/data/analyze/${encodeURIComponent(symbol)}.json`
+            );
 
-    let response =
-        await fetch(
-            `/static/data/analyze/${encodeURIComponent(symbol)}.json`
+        if (!response.ok) {
+            throw new Error(
+                `Analysis is not available for ${symbol} in the published dataset.`
+            );
+        }
+
+        const data =
+            await response.json();
+
+        renderAnalysis(data);
+    } catch (error) {
+        renderAnalysisError(
+            error?.message ||
+            `Analysis is not available for ${symbol}.`
         );
-
-    if (!response.ok) {
-        response =
-            await fetch("/api/analyze", {
-
-                method: "POST",
-
-                headers: {
-                    "Content-Type": "application/json"
-                },
-
-                body: JSON.stringify({
-                    symbol: symbol
-                })
-            });
+        return;
     }
+}
 
-    const data =
-        await response.json();
+function renderAnalysis(data) {
 
     document.getElementById("symbol")
         .innerText = symbol;
@@ -74,6 +76,30 @@ async function loadAnalysis() {
     renderRecentDataTable(data.recent_data || []);
     renderHeuristicDataTable(data.predicted_turning_points || []);
     renderHeuristicHistoryTable(data.heuristic_history || []);
+}
+
+function renderAnalysisError(message) {
+
+    document.getElementById("symbol")
+        .innerText = symbol;
+
+    const safeMessage =
+        escapeHtml(message);
+
+    document.getElementById("summary")
+        .innerHTML = `
+            <div class="chart-empty">
+                ${safeMessage}<br><br>
+                This page shows only pre-exported stock analysis data that has been published with the site.
+            </div>
+        `;
+
+    document.getElementById("expectedReturnInfo").innerHTML = "";
+    document.getElementById("turningPointChart").innerHTML = "";
+    document.getElementById("insights").innerHTML = "";
+    document.getElementById("recentData").innerHTML = "";
+    document.getElementById("heuristicData").innerHTML = "";
+    document.getElementById("heuristicHistory").innerHTML = "";
 }
 
 function renderExpectedReturnInfo(summary) {
@@ -458,8 +484,14 @@ function renderTurningPointChart(turningPoints, predictedTurningPoints, heuristi
                 `;
             }).join("");
 
+        const projectedMarkerPoints =
+            [
+                ...(selectedStage?.points || []),
+                ...(finalStage?.points || projectedPoints),
+            ];
+
         const projectedMarkers =
-            (finalStage?.points || projectedPoints).map(point => `
+            projectedMarkerPoints.map(point => `
                 <circle
                     class="chart-point"
                     cx="${xPos(point.date).toFixed(2)}"
