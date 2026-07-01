@@ -16,65 +16,11 @@
         <button onclick="analyzeStock()">Analyze</button>
     </div>
 
-    <section class="sector-section">
-        <div class="section-heading">
-            <h2>Sector Overview</h2>
-            <p id="sectorOverviewMeta" class="section-subtitle"></p>
-        </div>
-        <div id="sectorLists" class="sector-list-grid"></div>
-    </section>
-
-    <h2>Top BUY Opportunities</h2>
-
-    <table id="buyStocksTable" class="stocks-table">
-        <colgroup>
-            <col class="col-rank">
-            <col class="col-stock">
-            <col class="col-signal">
-            <col class="col-score">
-            <col class="col-rsi">
-            <col class="col-close">
-            <col class="col-buy-date">
-            <col class="col-buy-price">
-            <col class="col-sell-date">
-            <col class="col-sell-price">
-            <col class="col-diff-days">
-            <col class="col-diff-price">
-            <col class="col-xirr">
-        </colgroup>
-        <thead>
-            <tr class="header-group-row">
-                <th rowspan="2">S.No</th>
-                <th rowspan="2">Stock</th>
-                <th rowspan="2">Signal</th>
-                <th rowspan="2">Score</th>
-                <th rowspan="2">RSI</th>
-                <th rowspan="2">Last Close</th>
-                <th colspan="2">Expected Buy</th>
-                <th colspan="2">Expected Sell</th>
-                <th colspan="2">Difference</th>
-                <th rowspan="2" class="two-line-header">
-                    Expected Annualized Return<br>with heuristics
-                </th>
-            </tr>
-            <tr>
-                <th>Date</th>
-                <th>Price</th>
-                <th>Date</th>
-                <th>Price</th>
-                <th>Days</th>
-                <th>Price</th>
-            </tr>
-        </thead>
-
-        <tbody>
-        </tbody>
-    </table>
-
     <h2>Top Opportunities</h2>
 
-    <table id="stocksTable" class="stocks-table">
-        <colgroup>
+    <div class="table-scroll-container">
+        <table id="stocksTable" class="stocks-table">
+            <colgroup>
             <col class="col-rank">
             <col class="col-stock">
             <col class="col-signal">
@@ -116,7 +62,16 @@
 
         <tbody>
         </tbody>
-    </table>
+        </table>
+    </div>
+
+    <section class="sector-section">
+        <div class="section-heading">
+            <h2>Sector Overview</h2>
+            <p id="sectorOverviewMeta" class="section-subtitle"></p>
+        </div>
+        <div id="sectorLists" class="sector-list-grid"></div>
+    </section>
 
 </div>
 

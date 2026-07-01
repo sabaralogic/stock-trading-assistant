@@ -519,7 +519,19 @@ def main() -> None:
         auto_adjust=args.auto_adjust,
     )
 
-    print(f"Fetched data for {len(result)} symbols.")
+    fetched_count = len(result)
+    requested_count = len(symbols)
+    if fetched_count < requested_count:
+        print(
+            f"Warning: fetched data for {fetched_count} of {requested_count} requested symbols. "
+            "Missing or invalid symbols were skipped."
+        )
+    else:
+        print(f"Fetched data for {fetched_count} symbols.")
+
+    if fetched_count == 0:
+        print("No market data could be fetched. Exiting.")
+        return
 
     results = []
     analyses_by_symbol: dict[str, dict] = {}

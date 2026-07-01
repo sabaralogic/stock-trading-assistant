@@ -27,7 +27,6 @@ async function loadStocks() {
     sectorSummaryData = data.sector_summary || [];
 
     renderSectorOverview(stocksData, sectorSummaryData);
-    renderTopBuyStocks(stocksData);
     initializeSorting();
     sortStocks(currentSort.key, currentSort.direction);
 }
@@ -334,35 +333,6 @@ function updateHeaderIndicators() {
         }
         header.classList.remove("sorted");
     });
-}
-
-function renderTopBuyStocks(stocks) {
-
-    const buyStocks =
-        [...stocks]
-            .filter(stock => String(stock.signal).toUpperCase() === "BUY")
-            .sort((left, right) => {
-                const expectedXirrDiff =
-                    (Number(right.expected_xirr) || 0) - (Number(left.expected_xirr) || 0);
-                if (expectedXirrDiff !== 0) {
-                    return expectedXirrDiff;
-                }
-
-                const scoreDiff = (Number(right.score) || 0) - (Number(left.score) || 0);
-                if (scoreDiff !== 0) {
-                    return scoreDiff;
-                }
-
-                const rsiDiff = (Number(right.rsi) || 0) - (Number(left.rsi) || 0);
-                if (rsiDiff !== 0) {
-                    return rsiDiff;
-                }
-
-                return (Number(right.close) || 0) - (Number(left.close) || 0);
-            })
-            .slice(0, 25);
-
-    renderStocksTable("#buyStocksTable tbody", buyStocks);
 }
 
 function renderStocksTable(tbodySelector, stocks) {

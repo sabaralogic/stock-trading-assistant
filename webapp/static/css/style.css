@@ -213,9 +213,36 @@ table {
     background: white;
 }
 
+.table-scroll-container {
+    position: relative;
+    max-height: 420px;
+    overflow-y: auto;
+    border: 1px solid #d1d5db;
+    border-radius: 12px;
+    background: white;
+    margin-bottom: 40px;
+}
+
 .stocks-table {
     table-layout: fixed;
     font-size: 13px;
+    border-collapse: collapse;
+}
+
+.stocks-table thead {
+    display: table-header-group;
+}
+
+.stocks-table thead th {
+    position: sticky;
+    top: 0;
+    background: #1f2937;
+    color: white;
+    z-index: 3;
+}
+
+.stocks-table thead tr:nth-child(2) th {
+    top: 44px;
 }
 
 .stocks-table col.col-rank {
