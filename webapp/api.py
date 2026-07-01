@@ -43,8 +43,7 @@ from src.stock_analysis import (
 from src.strategy import rank_stocks
 from src.telegram_alert import send_telegram_message
 from src.heuristic_history import load_stock_heuristic_history, save_heuristic_snapshots
-
-NIFTY500_URL = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
+from src.stock_universe import load_default_symbol_metadata, load_default_symbols
 TOP_STOCKS_PATH = ROOT_DIR / "data" / "top_stocks.json"
 
 app = Flask(__name__)
@@ -78,12 +77,7 @@ def _load_stocks_from_file(path: str | None) -> list[str]:
 
 
 def _get_default_symbols() -> list[str]:
-    df = pd.read_csv(NIFTY500_URL)
-    return [
-        f"{symbol}.NS"
-        for symbol in df["Symbol"].dropna()
-        if not str(symbol).startswith("DUMMY")
-    ]
+    return load_default_symbols()
 
 
 def _read_symbols_from_payload(payload: dict[str, Any]) -> list[str]:
@@ -156,6 +150,7 @@ def _run_scan(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Please provide at least one ticker symbol.")
 
     result = _fetch_data(symbols, payload)
+    symbol_metadata = load_default_symbol_metadata()
     evaluations: list[dict[str, Any]] = []
     analyses_by_symbol: dict[str, dict[str, Any]] = {}
 
@@ -175,6 +170,7 @@ def _run_scan(payload: dict[str, Any]) -> dict[str, Any]:
                 analysis,
             )
         )
+        evaluations[-1]["sector"] = symbol_metadata.get(symbol, {}).get("sector", "Unknown")
 
     yesterday_performance = _build_yesterday_performance(result)
     top_n = int(payload.get("top_n", 25))
@@ -191,6 +187,7 @@ def _run_scan(payload: dict[str, Any]) -> dict[str, Any]:
         "top_stocks": json_safe(top_stocks),
         "saved_prediction_count": 0 if saved_predictions is None else len(saved_predictions),
         "yesterday_performance": yesterday_performance,
+        "sector_summary": json_safe(_build_sector_summary(evaluations)),
     }
 
     if top_stocks:
@@ -207,6 +204,52 @@ def _run_scan(payload: dict[str, Any]) -> dict[str, Any]:
                 response["telegram_error"] = "Telegram credentials not found in environment variables."
 
     return response
+
+
+def _build_sector_summary(evaluations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+
+    for evaluation in evaluations:
+        sector = str(evaluation.get("sector") or "Unknown")
+        grouped.setdefault(sector, []).append(evaluation)
+
+    summaries: list[dict[str, Any]] = []
+
+    for sector, rows in grouped.items():
+        buy_rows = [
+            row for row in rows
+            if str(row.get("signal", "")).upper() == "BUY"
+        ]
+        best_row = max(
+            rows,
+            key=lambda row: (
+                float(row.get("expected_xirr") or float("-inf")),
+                float(row.get("score") or float("-inf")),
+            ),
+        )
+        summaries.append({
+            "sector": sector,
+            "stock_count": len(rows),
+            "buy_count": len(buy_rows),
+            "hold_count": sum(1 for row in rows if str(row.get("signal", "")).upper() == "HOLD"),
+            "sell_count": sum(1 for row in rows if str(row.get("signal", "")).upper() == "SELL"),
+            "avg_score": (
+                sum(float(row.get("score") or 0) for row in rows) / len(rows)
+                if rows else None
+            ),
+            "best_stock": best_row.get("stock"),
+            "best_return": best_row.get("expected_xirr"),
+        })
+
+    return sorted(
+        summaries,
+        key=lambda row: (
+            row["buy_count"],
+            row["stock_count"],
+            row["avg_score"] if row["avg_score"] is not None else float("-inf"),
+        ),
+        reverse=True,
+    )
 
 
 def _get_or_create_scan_response(payload: dict[str, Any]) -> dict[str, Any]:

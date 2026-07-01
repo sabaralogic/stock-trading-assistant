@@ -29,10 +29,7 @@ from src.telegram_alert import send_telegram_photo
 from src.report_image import save_html_report
 
 from src.html_to_image import html_to_png
-
-NIFTY500_URL = (
-    "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
-)
+from src.stock_universe import load_default_symbol_metadata, load_default_symbols
 
 def build_opportunities_table(top_stocks: list[dict]) -> str:
 
@@ -89,14 +86,7 @@ def build_opportunities_table(top_stocks: list[dict]) -> str:
     return "\n".join(lines)
 
 def get_default_symbols() -> list[str]:
-
-    df = pd.read_csv(NIFTY500_URL)
-
-    return [
-        f"{symbol}.NS"
-        for symbol in df["Symbol"].dropna()
-        if not symbol.startswith("DUMMY")
-    ]
+    return load_default_symbols()
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fetch historical stock data in batches.")
@@ -167,7 +157,7 @@ def read_symbols(args: argparse.Namespace) -> list[str]:
 
     if not symbols:
         try:
-            print("Loading default NIFTY500 symbols...")
+            print("Loading default NSE total market symbols (750 symbols)...")
             symbols.extend(get_default_symbols())
         except Exception as e:
             print(f"Failed to load default symbols: {e}")
@@ -340,12 +330,59 @@ def build_scan_api_response(
         "top_stocks": json_safe(top_stocks),
         "saved_prediction_count": 0 if saved_predictions is None else len(saved_predictions),
         "yesterday_performance": yesterday_performance,
+        "sector_summary": json_safe(build_sector_summary(evaluations)),
     }
 
     if top_stocks:
         response["telegram_message"] = build_telegram_message(top_stocks)
 
     return response
+
+
+def build_sector_summary(evaluations: list[dict]) -> list[dict]:
+    grouped: dict[str, list[dict]] = {}
+
+    for evaluation in evaluations:
+        sector = str(evaluation.get("sector") or "Unknown")
+        grouped.setdefault(sector, []).append(evaluation)
+
+    summaries: list[dict] = []
+
+    for sector, rows in grouped.items():
+        buy_rows = [
+            row for row in rows
+            if str(row.get("signal", "")).upper() == "BUY"
+        ]
+        best_row = max(
+            rows,
+            key=lambda row: (
+                float(row.get("expected_xirr") or float("-inf")),
+                float(row.get("score") or float("-inf")),
+            ),
+        )
+        summaries.append({
+            "sector": sector,
+            "stock_count": len(rows),
+            "buy_count": len(buy_rows),
+            "hold_count": sum(1 for row in rows if str(row.get("signal", "")).upper() == "HOLD"),
+            "sell_count": sum(1 for row in rows if str(row.get("signal", "")).upper() == "SELL"),
+            "avg_score": (
+                sum(float(row.get("score") or 0) for row in rows) / len(rows)
+                if rows else None
+            ),
+            "best_stock": best_row.get("stock"),
+            "best_return": best_row.get("expected_xirr"),
+        })
+
+    return sorted(
+        summaries,
+        key=lambda row: (
+            row["buy_count"],
+            row["stock_count"],
+            row["avg_score"] if row["avg_score"] is not None else float("-inf"),
+        ),
+        reverse=True,
+    )
 
 
 def build_analyze_api_response(
@@ -471,6 +508,7 @@ def main() -> None:
     if not symbols:
         raise SystemExit("Please provide at least one ticker symbol.")
 
+    symbol_metadata = load_default_symbol_metadata()
     result = fetch_batch_stock_data(
         symbols,
         max_workers=args.workers,
@@ -512,6 +550,7 @@ def main() -> None:
             analysis["evaluation"],
             analysis,
         )
+        evaluation["sector"] = symbol_metadata.get(symbol, {}).get("sector", "Unknown")
         results.append(evaluation)
 
         if DEBUG_ENABLED:

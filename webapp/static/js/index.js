@@ -1,4 +1,5 @@
 let stocksData = [];
+let sectorSummaryData = [];
 let currentSort = {
     key: "score",
     direction: "desc"
@@ -23,10 +24,164 @@ async function loadStocks() {
         ...stock,
         rank: index + 1
     }));
+    sectorSummaryData = data.sector_summary || [];
 
+    renderSectorOverview(stocksData, sectorSummaryData);
     renderTopBuyStocks(stocksData);
     initializeSorting();
     sortStocks(currentSort.key, currentSort.direction);
+}
+
+function renderSectorOverview(stocks, sectorSummary) {
+
+    const meta =
+        document.getElementById("sectorOverviewMeta");
+    const sectorLists =
+        document.getElementById("sectorLists");
+
+    if (!meta || !sectorLists) {
+        return;
+    }
+
+    const sectorNames =
+        Array.from(
+            new Set(
+                stocks
+                    .map(stock => String(stock.sector || "Unknown"))
+                    .filter(Boolean)
+            )
+        );
+
+    meta.textContent =
+        `${sectorNames.length} sectors across ${stocks.length} analyzed stocks`;
+
+    const summaryBySector = new Map(
+        (sectorSummary || []).map(item => [String(item.sector || "Unknown"), item])
+    );
+
+    const sectorAccentPalette = [
+        "#dbeafe",
+        "#fef9c3",
+        "#ede9fe",
+        "#dcfce7",
+        "#fed7aa",
+        "#ffedd5",
+        "#cffafe",
+        "#fde68a",
+        "#fbcfe8",
+        "#c7d2fe",
+        "#bbf7d0",
+        "#fecaca"
+    ];
+
+    const groupedStocks =
+        stocks.reduce((groups, stock) => {
+            const sector =
+                String(stock.sector || "Unknown");
+            if (!groups[sector]) {
+                groups[sector] = [];
+            }
+            groups[sector].push(stock);
+            return groups;
+        }, {});
+
+    const panelData = Object.entries(groupedStocks)
+            .sort((left, right) => right[1].length - left[1].length)
+            .map(([sector, rows], index) => {
+                const orderedRows =
+                    [...rows].sort((left, right) => {
+                        const signalDiff =
+                            signalPriority(right.signal) - signalPriority(left.signal);
+                        if (signalDiff !== 0) {
+                            return signalDiff;
+                        }
+
+                        const scoreDiff =
+                            (Number(right.score) || 0) - (Number(left.score) || 0);
+                        if (scoreDiff !== 0) {
+                            return scoreDiff;
+                        }
+
+                        return (Number(right.expected_xirr) || 0) - (Number(left.expected_xirr) || 0);
+                    });
+
+                const sectorSummary = summaryBySector.get(sector);
+                const buyCountText =
+                    sectorSummary && Number.isFinite(sectorSummary.buy_count)
+                        ? `${sectorSummary.buy_count} BUY`
+                        : "N/A BUY";
+                const avgScoreText =
+                    sectorSummary && Number.isFinite(sectorSummary.avg_score)
+                        ? `${sectorSummary.avg_score.toFixed(1)} avg score`
+                        : "N/A avg score";
+                const bestReturnText =
+                    sectorSummary && Number.isFinite(sectorSummary.best_return)
+                        ? `${sectorSummary.best_return.toFixed(2)}%`
+                        : "N/A";
+                const bestStock = sectorSummary?.best_stock || "N/A";
+                const bestSummaryText = `Best: <a href="/stock.html?symbol=${encodeURIComponent(bestStock)}">${escapeHtml(bestStock)}</a> ${escapeHtml(bestReturnText)}`;
+                const accentColor = sectorAccentPalette[index % sectorAccentPalette.length];
+
+                return {
+                    sector,
+                    rows: orderedRows,
+                    sectorSummary,
+                    accentColor,
+                    html: `
+                        <article class="sector-panel" data-sector="${escapeHtml(sector)}" data-sector-index="${index}" style="--sector-accent:${accentColor};">
+                            <button type="button" class="sector-panel-summary">
+                                <div class="sector-panel-heading">
+                                    <div class="sector-panel-title-row">
+                                        <span class="sector-panel-title">${escapeHtml(sector)}</span>
+                                        <span class="sector-panel-count">${rows.length} stocks</span>
+                                    </div>
+                                    <div class="sector-panel-meta">
+                                        <span>${escapeHtml(buyCountText)}</span>
+                                        <span>• ${escapeHtml(avgScoreText)}</span>
+                                        <span>• ${bestSummaryText}</span>
+                                    </div>
+                                </div>
+                            </button>
+                            <div class="sector-panel-body">
+                                ${orderedRows.map(stock => {
+                                    const returnText =
+                                        Number.isFinite(stock.expected_xirr)
+                                            ? `${stock.expected_xirr.toFixed(2)}%`
+                                            : "N/A";
+                                    return `
+                                        <a class="sector-stock-row" href="/stock.html?symbol=${encodeURIComponent(stock.stock)}">
+                                            <span class="sector-stock-symbol">${escapeHtml(stock.stock)}</span>
+                                            <span class="sector-stock-signal ${String(stock.signal).toLowerCase()}">${escapeHtml(stock.signal)}</span>
+                                            <span class="sector-stock-score">Score ${escapeHtml(String(stock.score))}</span>
+                                            <span class="sector-stock-return">${escapeHtml(returnText)}</span>
+                                        </a>
+                                    `;
+                                }).join("")}
+                            </div>
+                        </article>
+                    `
+                };
+            });
+
+    sectorLists.innerHTML = panelData.map(item => item.html).join("");
+
+    sectorLists.querySelectorAll(".sector-panel-summary").forEach((summaryButton, index) => {
+        const panel = summaryButton.closest(".sector-panel");
+
+        summaryButton.addEventListener("click", () => {
+            const isOpen = panel.classList.contains("opened");
+            closeAllSectorPanels(sectorLists);
+            if (!isOpen) {
+                panel.classList.add("opened");
+            }
+        });
+    });
+}
+
+function closeAllSectorPanels(container) {
+    container.querySelectorAll(".sector-panel.opened").forEach(panel => {
+        panel.classList.remove("opened");
+    });
 }
 
 function initializeSorting() {
@@ -342,6 +497,32 @@ function analyzeStock() {
 
     window.location.href =
         `/stock.html?symbol=${encodeURIComponent(symbol)}`;
+}
+
+function signalPriority(signal) {
+
+    const normalized =
+        String(signal || "").toUpperCase();
+
+    if (normalized === "BUY") {
+        return 3;
+    }
+    if (normalized === "HOLD") {
+        return 2;
+    }
+    if (normalized === "SELL") {
+        return 1;
+    }
+    return 0;
+}
+
+function escapeHtml(value) {
+
+    return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll("\"", "&quot;");
 }
 
 loadStocks();

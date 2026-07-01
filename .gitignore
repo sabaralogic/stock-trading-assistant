@@ -10,4 +10,5 @@ webapp/static/data/
 data/heuristic_history.csv
 data/predictions2.csv
 data/results2.csv
+data/default_stock_universe.csv
 
